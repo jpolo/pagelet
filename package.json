@@ -1,0 +1,38 @@
+{
+    "name"    : "pagelet",
+    "version" : "1.0.0",
+    "author"  : {
+        "name"  : "Julien Polo",
+        "email" : "julien.polo@gmail.com",
+        "url"   : "http://github.com/jpolo"
+    },
+    "licenses"      : [ "MIT" ],
+    "description" : "Bigpipe (Facebook) open source implementation",
+    "keywords"   : [ "javascript", "browser", "rendering", "bigpipe" ],
+    "homepage"   : "https://github.com/jpolo/pagelet",
+    "repository" : {
+        "type" : "git",
+        "url"  : "git://github.com/jpolo/pagelet.git"
+    },
+    "bugs"       : {
+        "url": "https://github.com/jpolo/pagelet/issues"
+    },
+    "main": "./index",
+    "directories": {
+        "test": "./spec"
+    },
+    "dependencies": {
+    },
+    "devDependencies": {
+        "jasmine-node" : "*",
+        "jasmine-dom" : "*",
+        "requirejs"    : "*",
+        "lint"         : "*"
+    },
+    "scripts": {
+        "test": ["node ./spec/runner.js"]
+    },
+    "engines" : {
+        "node": ">=0.4.0"
+    }
+}

@@ -1,0 +1,55 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<head>
+    <title>Jasmine Test Runner</title>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <link rel="stylesheet" type="text/css" href="../node_modules/jasmine-dom/examples/lib/jasmine/jasmine.css">
+    <script src="../node_modules/jasmine-dom/examples/lib/jasmine/jasmine.js"></script>
+    <script src="../node_modules/jasmine-dom/examples/lib/jasmine/jasmine-html.js"></script>
+
+    <!-- include helper files here... -->
+    <script src="../node_modules/requirejs/require.js"></script>
+    <script src="../index.js"></script>
+    <script src="../pagelet.js"></script>
+    <script type="text/javascript">
+        pagelet.dom.stream("pagelet-stream");
+    </script>
+
+    <script type="text/javascript">
+        requirejs.config({
+            baseUrl: ".."
+        });
+    </script>
+    <!-- include source files here... -->
+</head>
+<body>
+
+    <div id="p2" class="pagelet">
+        <resource url="resource/p1.css"></resource>
+        <resource url="resource/p2.css"></resource>
+        <resource url="resource/p2.js"></resource>
+
+        helloworld2!
+    </div>
+
+    <div id="pagelet-stream">
+        <code data-pageletid="p2">
+            <!--
+            <>
+            -->
+        </code>
+
+    </div>
+
+    <script type="text/javascript">
+        requirejs(["jquery", "pagelet/spec/_base", "pagelet/spec/all"], function () {
+            pagelet.Pagelet.load();
+
+            var env = jasmine.getEnv();
+            env.addReporter(new jasmine.TrivialReporter());
+            env.execute();
+        });
+    </script>
+
+</body>
+</html>
