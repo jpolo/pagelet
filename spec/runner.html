@@ -10,10 +10,18 @@
     <!-- include helper files here... -->
     <script src="../node_modules/requirejs/require.js"></script>
     <script src="../index.js"></script>
-    <script src="../pagelet.js"></script>
+
     <script type="text/javascript">
-        pagelet.dom.stream("pagelet-stream");
+        window.pagelet = {
+            onload: function () {
+                pagelet.config({
+                    debug: true,
+                    stream: "#pagelet-stream"
+                });
+            }
+        }
     </script>
+    <script src="../pagelet.js" async></script>
 
     <script type="text/javascript">
         requirejs.config({
@@ -25,20 +33,29 @@
 <body>
 
     <div id="p2" class="pagelet">
-        <resource url="resource/p1.css"></resource>
-        <resource url="resource/p2.css"></resource>
-        <resource url="resource/p2.js"></resource>
-
-        helloworld2!
+        loading p2...
+    </div>
+    <div id="p3" class="pagelet">
+        loading p3...
     </div>
 
     <div id="pagelet-stream">
-        <code data-pageletid="p2">
+        <pagelet data-pageletid="p2">
+            <resource url="resource/p1.css"></resource>
+            <resource url="resource/p2.css"></resource>
+            <resource url="resource/p2.js"></resource>
             <!--
-            <>
+            <div class="message">I must be bold green</div>
+            <div class="error">I must be bold red</div>
             -->
-        </code>
-
+        </pagelet>
+        <pagelet data-pageletid="p3">
+            <resource url="resource/p2.css"></resource>
+            <resource url="resource/p2.js"></resource>
+            <!--
+            <div class="error">I must be red</div>
+            -->
+        </pagelet>
     </div>
 
     <script type="text/javascript">

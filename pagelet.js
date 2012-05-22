@@ -37,19 +37,43 @@
 
 
   var
-  config     = {
-    idAttribute: "data-pageletid"
+  configuration = {
+    debug        : false,
+    attributeId  : "data-pageletid",
+    stream       : "#pagelet-stream",
+    pageletNode  : {
+      nodeType : 1,
+      nodeName : 'pagelet'
+    },
+    pageletHtmlNode  : {
+      nodeType : 8//comment node
+    },
+    resourceNode : {
+      nodeType : 1,
+      nodeName : 'resource'
+    }
   },
-  hasConsole = typeof console !== 'undefined' && console.log,
-  hasAMD     = typeof define !== 'undefined',
-  stringify  = String,
+  hasConsole    = typeof console !== 'undefined' && console.log,
+  hasAMD        = typeof define !== 'undefined',
+  stringify     = String,
+
+  //shim for defineProperty
+  defineProperty = Object.defineProperty ? function (object, propertyName, value, enumerable) {
+    Object.defineProperty(object, propertyName,  {
+      value: value,
+      enumerable: !!enumerable,
+      writable: true
+    });
+  } : function (object, propertyName, value) {
+    object[propertyName] = value;
+  };
 
   /**
    * evaluate code
    *
    * @param {string} stringCode
    */
-  globalEval   = function globalEval(stringCode) {
+  function globalEval(stringCode) {
     /*jslint evil:true*/
     if (global.execScript) {
       global.execScript(stringCode);
@@ -60,10 +84,10 @@
       //}());
     }
     /*jslint evil:false*/
-  },
+  };
 
   //iteration shortcut
-  forEach    = function forEach(iterable, callback, thisp) {
+  function forEach(iterable, callback, thisp) {
     var length = iterable.length, i;
     if (typeof length !== 'undefined') {
        for (i = 0; i < length; i += 1) {
@@ -76,61 +100,18 @@
         }
       }
     }
-  },
-
-  /**
-   * Create a new Element
-   *
-   * @return {Element}
-   */
-  element   = function element(tagName, attributes) {
-    var
-    attr   = $module.dom.attr,
-    node   = document.createElement(tagName),
-    loader = document.createElement('img');
-
-    forEach(attributes, function (value, key) {
-      attr(this, key, value);
-    }, node);
-
-    //only for css
-    if (tagName === 'link') {
-      loader.onload = function onload() {
-        if (node.onload) {
-          node.onload();
-        }
-      };
-      loader.onerror = function onerror() {
-        if (node.onerror) {
-          node.onerror();
-        }
-      };
-      loader.src = attributes.href;
-    }
-    return node;
-  },
-
-  //shim for defineProperty
-  defineProperty = Object.defineProperty ? function (object, propertyName, value, enumerable) {
-    Object.defineProperty(object, propertyName,  {
-      value: value,
-      enumerable: !!enumerable,
-      writable: true
-    });
-  } : function (object, propertyName, value) {
-    object[propertyName] = value;
-  },
+  }
 
   //throw error if property is not defined
-  requireProperty = function requireProperty(object, propertyName) {
+  function requireProperty(object, propertyName) {
     if (!propertyName in object) {
       throw new Error(object + ' has no property "' + propertyName + '"');
     }
     return object[propertyName];
-  },
+  }
 
   //shortcut for method implementation
-  implement   = function implement(klassOrObject, extension/*, ...*/) {
+  function implement(klassOrObject, extension/*, ...*/) {
     forEach(arguments, function (extension, i) {
       if (i > 0) {
         var isFunction = typeof klassOrObject === 'function';
@@ -140,20 +121,44 @@
       }
     });
     return klassOrObject;
-  },
+  }
 
-  //debug shortcut
-  debug    = function debug(/*...*/) {
-    if ($module.debug && hasConsole) {
-      console.log.apply(console, ['[pagelet]'].concat(Array.prototype.slice.call(arguments)));
+  function arrayFrom(arrayLike) {
+    return Array.prototype.slice.call(arrayLike);
+  }
+
+  //logging shortcut
+  function debug(/*...*/) {
+    if (configuration.debug && hasConsole) {
+      console.log.apply(console, ['[pagelet]'].concat(arrayFrom(arguments)));
     }
-  };
+  }
 
+  function warn(/*...*/) {
+    if (hasConsole) {
+      console.warn.apply(console, ['[pagelet]'].concat(arrayFrom(arguments)));
+    }
+  }
 
   /**
-   * default
+   * @param {Object=} data
+   * @return {Object|pagelet}
    */
-  $module.debug = true;
+  function config(/*[data]*/) {
+    if (arguments.length) {
+      var data = arguments[0];
+      if (data.hasOwnProperty('debug')) {
+        configuration.debug = !!data.debug;
+      }
+      if (data.hasOwnProperty('stream')) {
+        configuration.stream = stringify(data.stream);
+        $module.dom.createStream(configuration.stream);
+      }
+    } else {
+      return configuration;
+    }
+  }
+
 
   /**
    * @trait Identifiable
@@ -226,7 +231,9 @@
      * @constructor
      */
     State: function State() {
-      this.state = this._stateValue('INIT');
+      if (typeof this.state === "undefined") {
+        this.state = this._stateValue('INIT');
+      }
     },
 
     /**
@@ -276,7 +283,9 @@
      */
     Loadable: function Loadable() {
       this.State();
-      this.callbacks = [];
+      if (!this.callbacks) {
+        this.callbacks = [];
+      }
     },
 
     /**
@@ -365,11 +374,8 @@
      */
     Resource.get = function get(url) {
       var
-      re    = new RegExp("(?:.*\/)?(.+js)"),
-      m    = re.exec(url),
-      id    = m ? m[1] : url,
       instances = Resource.instances,
-      resource  = instances && instances[id];
+      resource  = instances && instances[url];
 
       if (!resource) {
         resource = new Resource({
@@ -395,9 +401,9 @@
 
         this.Identifiable(data._id);
         this.Loadable();
-        this.url     = url;
+        this.url    = url;
         this.node   = null;
-        this.type   = requireProperty(Resource.extensions, extension);
+        this.type   = data.type || requireProperty(Resource.extensions, extension);
       },
 
       /**
@@ -405,8 +411,9 @@
        */
       _onLoading: function _onLoading(newState, oldState) {
         var
-        self   = this,
-        onload = function onload() {
+        self          = this,
+        createElement = $module.dom.createElement,
+        onload        = function onload() {
           self.readyState(self._stateValue('DONE'));
         },
         node;
@@ -414,7 +421,7 @@
         //Load resource
         switch (this.type) {
         case Resource.TYPE_STYLESHEET:
-          node = element('link', {
+          node = createElement('link', {
             rel : 'stylesheet',
             media  : 'screen',
             type   : 'text/css',
@@ -424,7 +431,7 @@
           });
           break;
         case Resource.TYPE_JAVASCRIPT:
-          node = element('script', {
+          node = createElement('script', {
             type   : 'text/javascript',
             src : this.url,
             async  : true,
@@ -433,7 +440,7 @@
           });
           break;
         }
-        this.node = null;
+        this.node = node;
         $module.dom.head().appendChild(node);
       },
 
@@ -536,11 +543,29 @@
        * @return this
        */
       addResource: function addResource(resourceOrUrl) {
-        var resource = typeof resourceOrUrl === "string" ? $module.Resource.get(resourceOrUrl) : resourceOrUrl;
+        var
+        self      = this,
+        resources = this.resources,
+        resource  = (typeof resourceOrUrl === "string" ?
+          $module.Resource.get(resourceOrUrl) :
+          resourceOrUrl
+        );
 
-        debug(this + " linked to " + resource);
-        this.resources[resource._id] = resource;
-        //return this;
+        if (!resources[resource._id]) {
+          debug(this + " linked to " + resource, this);
+          resources[resource._id] = resource;
+          /*if (
+            (resource.type === $module.Resource.TYPE_STYLESHEET &&
+            this.readyState() >= this._stateValue('LOADING_STYLESHEET')) ||
+
+            (resource.type === $module.Resource.TYPE_JAVASCRIPT &&
+            this.readyState() >= this._stateValue('LOADING_JAVASCRIPT'))
+          ) {
+            console.warn("lala");
+            resource.load();
+          }*/
+        }
+        return this;
       },
 
       loadStylesheets: function loadStylesheets() {
@@ -568,10 +593,16 @@
         }, this);
       },
 
+      html: function html(content) {
+        this.innerHTML = content;
+        if (this.readyState() >= this._stateValue('LOADING_HTML')) {
+          $module.dom.html(this.node, content);
+        }
+      },
+
       loadHtml: function loadHtml() {
-        var innerHTML = this.innerHTML;
-        if (innerHTML !== "") {
-          this.node.innerHTML = innerHTML;
+        if (this.innerHTML !== "") {
+          this.html(this.innerHTML);
         }
         this.readyState(this._stateValue('LOADING_JAVASCRIPT'));
       },
@@ -631,7 +662,7 @@
           node: self,
           resources: urls
         });
-        dom.attr(self, config.idAttribute, pagelet._id);
+        dom.attr(self, configuration.attributeId, pageletObject._id);
       }
       return pageletObject;
     }
@@ -690,6 +721,55 @@
       return bodyNode;
     };
 
+    dom.isLike = function isLike(element, template) {
+      if (
+        //nodeName
+        (template.hasOwnProperty("nodeName") &&
+        element.nodeName.toLowerCase() !== template.nodeName.toLowerCase()) ||
+
+        //nodeType
+        (template.hasOwnProperty("nodeType") &&
+        element.nodeType !== template.nodeType)
+      ) {
+        return false;
+      }
+
+      return true;
+    }
+
+    /**
+     * Create a new element
+     *
+     * @return {Element}
+     */
+    dom.createElement = function createElement(tagName, attributes) {
+      var
+      attr    = dom.attr,
+      element = document.createElement(tagName),
+      loader;
+
+      forEach(attributes, function (value, key) {
+        attr(this, key, value);
+      }, element);
+
+      //only for css
+      if (tagName === 'link') {
+        loader = new Image();
+        loader.onload = function onload() {
+          if (element.onload) {
+            element.onload();
+          }
+        };
+        loader.onerror = function onerror() {
+          if (element.onerror) {
+            element.onerror();
+          }
+        };
+        loader.src = attributes.href;
+      }
+      return element;
+    };
+
     /**
      * Shortcut to get element by its id
      *
@@ -700,13 +780,19 @@
       return document.getElementById(id);
     }
 
+    /**
+     * Shortcut to get elements by its class
+     *
+     * @return {NodeList}
+     */
     dom.byClass = function (klass/*[, root]*/) {
 
       var
       root     = arguments[1] || dom.body();
       elements = root.getElementsByTagName('*'),
+      length   = elements.length,
       results  = [], i;
-      for (i = 0; i < elements.length; i++) {
+      for (i = 0; i < length; i += 1) {
         if (elements[i].className === klass) {
           results.push(elements[i]);
         }
@@ -714,24 +800,28 @@
       return results;
     }
 
+    /**
+     * Getter/Setter for `element` attributes
+     *
+     */
     dom.attr = function attr(element, name/*[, value]*/) {
       var
+      watcher   = null,
+      isSetter  = arguments.length > 2,
       lc        = name.toLowerCase(),
       propName  = propNames[lc] || name,
       attrName  = attrNames[lc] || name,
       forceProp = forcePropNames[propName],
-      value, valueType, attrNode;
-      if (arguments.length === 3) {
+      value     = isSetter ? arguments[2] : element[propName],
+      valueType = typeof value, attrNode;
+      if (isSetter) {
         //setter
-        value = arguments[2];
         if (forceProp || boolOrFunction[valueType]) {
           element[attrName] = value;
           return;
         }
         element.setAttribute(attrName, value);
       } else {
-        value = element[propName];
-        valueType = typeof value;
         if (
           (forceProp && valueType !== "undefined") ||
           (propName !== "href" && boolOrFunction[valueType])
@@ -752,32 +842,60 @@
       }
     }
 
-    dom.text = function text(element) {
-      return element.innerHTML;
+    dom.html = function html(element/*[, content]*/) {
+      if (arguments.length > 1) {
+        element.innerHTML = arguments[1];
+      } else {
+        return element.innerHTML;
+      }
     };
 
-
-    dom.stream = function stream(elementId) {
-
+    dom.createStream = function createStream(elementId) {
       var watcher = setInterval(function () {
         var streamNode = dom.streamNode, i, l;
         if (!streamNode) {
           streamNode = dom.streamNode = dom.byId(elementId);
+
+          //hide
+          dom.attr(streamNode, "style", "display:none");
+          debug(streamNode, "as pagelet stream");
         }
         if (streamNode) {
-          forEach(streamNode.childNodes, function (child) {
-            if (Node.ELEMENT_NODE === child.nodeType) {
-              var
-              targetId = dom.attr(child, config.idAttribute),
-              target   = dom.byId(targetId),
-              text     = dom.text(child);
-              if (!target) {
-                throw new Error("#" + targetId + " does not exist");
+          try {
+            forEach(streamNode.childNodes, function (child) {
+              if (dom.isLike(child, configuration.pageletNode)) {
+                var
+                targetId = dom.attr(child, configuration.attributeId),
+                target   = dom.byId(targetId),
+                targetPagelet;
+
+                if (!target) {
+                  throw new Error("#" + targetId + " does not exist");
+                }
+                targetPagelet = target.pagelet();
+                forEach(child.childNodes, function (pageletContent) {
+
+                  if (dom.isLike(pageletContent, configuration.pageletHtmlNode)) {
+                    debug(pageletContent, "parsed as content");
+                    targetPagelet.html(pageletContent.nodeValue);
+                  } else if (dom.isLike(pageletContent, configuration.resourceNode)) {
+                    debug(pageletContent, "parsed as resource");
+                    targetPagelet.addResource(dom.attr(pageletContent, 'url'));
+                  } else if (pageletContent.nodeType === 3) {//text node
+                    //ignored
+                  } else {
+                    warn(pageletContent, " not recognized");
+                  }
+                });
+              } else if (child.nodeType === 3) {//text node
+                //ignored
+              } else {
+                warn(child, " should be a <" + configuration.pageletNode.nodeName + " />");
               }
 
-              target.pagelet().innerHTML = text;
-            }
-          });
+            });
+          } catch (e) {
+          }
           dom.empty(streamNode);
         }
       }, 1);
@@ -786,23 +904,9 @@
     return dom;
   }({}));
 
-  $module.parse = function parse(element/*[, callback]*/) {
-    var callback = arguments[1];
-    forEach(element.getElementsByTagName('pagelet'), function (node) {
-      element.pagelet();
-    });
-    if (callback) {
-      callback();
-    }
-  };
-
-  /*$module.config = function (data) {
-    data = data || {};
-    config.stream = requireProperty(data, 'stream');
-
-  };*/
-
   //Export
+  $module.config = config;
+  $module.onload = $module.onload || null;
   global.pagelet = $module;
 
   if (hasAMD) {
@@ -810,6 +914,8 @@
       return pagelet;
     });
   }
-}((function () {return this;}()), {}));
 
-
+  if (pagelet.onload) {
+    pagelet.onload();
+  }
+}((function () {return this;}()), typeof pagelet !== "undefined" ? pagelet : {}));
