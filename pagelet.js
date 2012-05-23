@@ -54,6 +54,7 @@
       nodeName : 'resource'
     }
   },
+  hasQuery      = !!document.querySelectorAll,
   hasConsole    = typeof console !== 'undefined' && console.log,
   hasAMD        = typeof define !== 'undefined',
   stringify     = String,
@@ -90,15 +91,21 @@
   //iteration shortcut
   function forEach(iterable, callback, thisp) {
     var length = iterable.length, i;
-    if (typeof length !== 'undefined') {
-       for (i = 0; i < length; i += 1) {
-         callback.call(thisp, iterable[i], i, iterable);
-       }
-    } else {
-      for (i in iterable) {
-        if (iterable.hasOwnProperty(i)) {
-          callback.call(thisp, iterable[i], i, iterable);
+    try {
+      if (typeof length !== 'undefined') {
+         for (i = 0; i < length; i += 1) {
+           callback.call(thisp, iterable[i], i, iterable);
+         }
+      } else {
+        for (i in iterable) {
+          if (iterable.hasOwnProperty(i)) {
+            callback.call(thisp, iterable[i], i, iterable);
+          }
         }
+      }
+    } catch (e) {
+      if (e !== false) {//`false` is a stop iteration signal
+        throw e;
       }
     }
   }
@@ -126,6 +133,13 @@
 
   function arrayFrom(arrayLike) {
     return Array.prototype.slice.call(arrayLike);
+  }
+
+  function after(fn, afterCallback) {
+    return fn ? function () {
+      fn.apply(this, arguments);
+      afterCallback.apply(this, arguments);
+    } : afterCallback;
   }
 
   //logging shortcut
@@ -162,10 +176,13 @@
 
   /**
    * Start pagelet engine
+   *
+   * @return {pagelet}
    */
   function start() {
     $module.Pagelet.load();
     $module.dom.createStream(configuration.stream);
+    return $module;
   }
 
   /**
@@ -239,31 +256,41 @@
      * @constructor
      */
     State: function State() {
-      if (typeof this.state === "undefined") {
-        this.state = this._stateValue('INIT');
+      if (typeof this._state === "undefined") {
+        this._state = this.state('INIT');
       }
     },
 
     /**
-     * @param {string} state
+     * @param {string|number} newState
      * @return {boolean}
      */
-    isState: function isState(state) {
-      return this.state === state;
+    isState: function isState(newState) {
+      if (typeof newState === "string") {
+        newState = this.state(newState);
+      }
+      return this._state === newState;
     },
 
     /**
      * @return {boolean}
      */
     readyState: function readyState(newState) {
-      var state  = this.state;
+
       if (!arguments.length) {
-        return state;
-      } else if (state < newState) {
-        this.state = newState;
+        //getter
+        return this._state;
+      }
+
+      var state  = this._state;
+      if (typeof newState === "string") {
+        newState = this.state(newState);
+      }
+      if (state < newState) {
+        this._state = newState;
         //notify changes
         if (this.onreadystatechange) {
-          this.onreadystatechange();
+          this.onreadystatechange(newState, state);
         }
         return requireProperty(this, '_onreadystatechange').call(this, newState, state);
       } else {
@@ -277,8 +304,12 @@
     /*onreadystatechange: function onreadystatechange() {
     },*/
 
-    _stateValue: function stateValue(name) {
-      return requireProperty(this.constructor, 'state')[name];
+    state: function state(name) {
+      var result = requireProperty(this.constructor, 'state')[name];
+      if (typeof result === "undefined") {
+        throw new RangeError(name + " is not a valid state");
+      }
+      return result;
     }
   };
 
@@ -300,7 +331,7 @@
      * @return {boolean}
      */
     isDone: function isDone() {
-      return this.isState(this._stateValue('DONE'));
+      return this.isState('DONE');
     },
 
     /**
@@ -312,7 +343,7 @@
       if (callback) {
         this.done(callback, thisp);
       }
-      this.readyState(this._stateValue('LOADING'));//Change state
+      this.readyState('LOADING');//Change state
       return this;
     },
 
@@ -334,9 +365,9 @@
     _onreadystatechange: function _onreadystatechange(newState, oldState) {
 
       switch (newState) {
-      case this._stateValue('INIT'):
+      case this.state('INIT'):
         break;
-      case this._stateValue('DONE'):
+      case this.state('DONE'):
         forEach(this.callbacks, function (callback) {
           callback[0].call(callback[1]);
         });
@@ -349,10 +380,9 @@
   });
 
   /**
-   *
+   * @class Resource
    */
   $module.Resource = (function () {
-
     function Resource(data) {
       if (this instanceof Resource) {
         this.initialize(data);
@@ -403,7 +433,7 @@
        */
       initialize: function initialize(data) {
         var
-        url   = requireProperty(data, 'url'),
+        url        = requireProperty(data, 'url'),
         indexOfExt = url.lastIndexOf('.'),
         extension  = ~indexOfExt ? url.slice(indexOfExt + 1, url.length) : '';
 
@@ -415,6 +445,16 @@
       },
 
       /**
+       * @return {boolean}
+       */
+      isType: function isType(type) {
+        if (typeof type === "string") {
+          type = this.constructor["TYPE_" + type];
+        }
+        return this.type === type;
+      },
+
+      /**
        *
        */
       _onLoading: function _onLoading(newState, oldState) {
@@ -422,7 +462,7 @@
         self          = this,
         createElement = $module.dom.createElement,
         onload        = function onload() {
-          self.readyState(self._stateValue('DONE'));
+          self.readyState('DONE');
         },
         node;
 
@@ -456,11 +496,35 @@
        *
        */
       onreadystatechange: function onreadystatechange() {
-        debug(this + " in state " + this.state, this);
+        debug(this + " in state " + this.readyState(), this);
       }
     });
     return Resource;
   }());
+
+  /*$module.loader = (function (loader) {
+
+    var
+    statesCount = [0, 0, 0],//number of states
+    waiting     = [];
+
+    loader.push = function push(resource) {
+      if (resource.isState('INIT')) {
+        waiting.push(resource);
+        resource.onreadystatechange = after(resource.onreadystatechange, function () {
+          var state = resource.readyState();
+          statesCount[state] += 1;
+
+          if (instancesStateCount[state] === resource.constructor.instancesCount) {
+
+          }
+        });
+      }
+    };
+
+
+    return loader;
+  }({}));*/
 
   $module.Pagelet = (function () {
     var
@@ -486,7 +550,8 @@
       LOADING_STYLESHEET: 2,
       LOADING_HTML    : 3,
       LOADING_JAVASCRIPT: 4,
-      DONE        : 5
+      LOADING_JAVASCRIPT_INLINE: 5,
+      DONE        : 6
     };
 
     /**
@@ -521,27 +586,30 @@
 
       _onLoading: function _onLoading(newState, oldState) {
         switch (newState) {
-        case this._stateValue('LOADING'):
-          this.readyState(this._stateValue('LOADING_STYLESHEET'));
+        case this.state('LOADING'):
+          this.readyState('LOADING_STYLESHEET');
           break;
-        case this._stateValue('LOADING_STYLESHEET'):
+        case this.state('LOADING_STYLESHEET'):
           this.loadStylesheets();
           break;
-        case this._stateValue('LOADING_HTML'):
+        case this.state('LOADING_HTML'):
           this.loadHtml();
           break;
-        case this._stateValue('LOADING_JAVASCRIPT'):
-          ifState(this._stateValue('LOADING_JAVASCRIPT'), function (pageletObject) {
-            pageletObject.loadJavascripts();
+        case this.state('LOADING_JAVASCRIPT'):
+          ifState(this.state('LOADING_JAVASCRIPT'), function (pglt) {
+            pglt.loadJavascripts();
           });
           break;
-
+        case this.state('LOADING_JAVASCRIPT_INLINE'):
+          this.loadJavascriptInline();
+          break;
         }
       },
 
       onreadystatechange: function onreadystatechange() {
-        instancesStateCount[this.state] += 1;
-        debug(this + " in state " + this.state, this);
+        var state = this.readyState();
+        instancesStateCount[state] += 1;
+        debug(this + " in state " + state, this);
       },
 
       /**
@@ -552,7 +620,6 @@
        */
       addResource: function addResource(resourceOrUrl) {
         var
-        self      = this,
         resources = this.resources,
         resource  = (typeof resourceOrUrl === "string" ?
           $module.Resource.get(resourceOrUrl) :
@@ -562,38 +629,62 @@
         if (!resources[resource._id]) {
           debug(this + " linked to " + resource, this);
           resources[resource._id] = resource;
+          /*resource.done(function () {
+            this.onResourceLoaded(resource);
+          }, this);*/
         }
         return this;
       },
 
+      html: function html(content) {
+        this.innerHTML = content;
+        if (this.readyState() >= this.state('LOADING_HTML')) {
+          $module.dom.html(this.node, content);
+        }
+      },
+
+      /*onResourceLoaded: function (resource) {
+        if (resource.isType('STYLESHEET')) {
+        } else if (resource.isType('JAVASCRIPT')) {
+        }
+      },
+
+      _isLoaded: function _isLoaded(type) {
+        var allLoaded = true;
+        forEach(this.resources, function (resource) {
+          if (resource.type === type && !resource.isDone()) {
+            allLoaded = false;
+            throw false;
+          }
+        });
+        return allLoaded;
+      },*/
+
       loadStylesheets: function loadStylesheets() {
         this.loadType($module.Resource.TYPE_STYLESHEET, function () {
-          this.readyState(this._stateValue('LOADING_HTML'));
+          this.readyState('LOADING_HTML');
         }, this);
       },
 
       loadJavascripts: function loadJavascripts() {
         this.loadType($module.Resource.TYPE_JAVASCRIPT, function () {
-          var jsCode = this.jsCode;//TODO change that!
-          if (jsCode && jsCode !== "") {
-            try {
-              debug("evaluating js code: ", jsCode);
-              globalEval(jsCode);
-            } catch (e) {
-              throw e;
-            } finally {
-              this.readyState(this._stateValue('DONE'));
-            }
-          } else {
-            this.readyState(this._stateValue('DONE'));
-          }
+          this.readyState('LOADING_JAVASCRIPT_INLINE');
         }, this);
       },
 
-      html: function html(content) {
-        this.innerHTML = content;
-        if (this.readyState() >= this._stateValue('LOADING_HTML')) {
-          $module.dom.html(this.node, content);
+      loadJavascriptInline: function () {
+        var jsCode = this.jsCode;//TODO change that!
+        if (jsCode && jsCode !== "") {
+          try {
+            debug("evaluating js code: ", jsCode);
+            globalEval(jsCode);
+          } catch (e) {
+            throw e;
+          } finally {
+            this.readyState('DONE');
+          }
+        } else {
+          this.readyState('DONE');
         }
       },
 
@@ -601,7 +692,7 @@
         if (this.innerHTML !== "") {
           this.html(this.innerHTML);
         }
-        this.readyState(this._stateValue('LOADING_JAVASCRIPT'));
+        this.readyState('LOADING_JAVASCRIPT');
       },
 
       loadType: function loadType(type, callback, thisp) {
