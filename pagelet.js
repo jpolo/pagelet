@@ -41,6 +41,7 @@
     debug        : false,
     attributeId  : "data-pageletid",
     stream       : "#pagelet-stream",
+    streamWatch  : 1,
     pageletNode  : {
       nodeType : 1,
       nodeName : 'pagelet'
@@ -152,13 +153,20 @@
       }
       if (data.hasOwnProperty('stream')) {
         configuration.stream = stringify(data.stream);
-        $module.dom.createStream(configuration.stream);
       }
+      return $module;
     } else {
       return configuration;
     }
   }
 
+  /**
+   * Start pagelet engine
+   */
+  function start() {
+    $module.Pagelet.load();
+    $module.dom.createStream(configuration.stream);
+  }
 
   /**
    * @trait Identifiable
@@ -264,7 +272,7 @@
     },
 
     /**
-     *
+     * To be overriden
      */
     /*onreadystatechange: function onreadystatechange() {
     },*/
@@ -554,16 +562,6 @@
         if (!resources[resource._id]) {
           debug(this + " linked to " + resource, this);
           resources[resource._id] = resource;
-          /*if (
-            (resource.type === $module.Resource.TYPE_STYLESHEET &&
-            this.readyState() >= this._stateValue('LOADING_STYLESHEET')) ||
-
-            (resource.type === $module.Resource.TYPE_JAVASCRIPT &&
-            this.readyState() >= this._stateValue('LOADING_JAVASCRIPT'))
-          ) {
-            console.warn("lala");
-            resource.load();
-          }*/
         }
         return this;
       },
@@ -589,7 +587,6 @@
           } else {
             this.readyState(this._stateValue('DONE'));
           }
-
         }, this);
       },
 
@@ -634,7 +631,6 @@
             resource.load(done);
           });
         }
-
       }
     });
     return Pagelet;
@@ -646,25 +642,11 @@
    */
   implement(Element, {
     pagelet: function pagelet() {
-      var
-      self          = this,
-      pageletObject = self._pagelet,
-      dom, urls;
-      if (!pageletObject) {
-        dom           = $module.dom;
-        urls          = [];
-        forEach(self.getElementsByTagName('resource'), function (node) {
-          urls.push(dom.attr(node, 'url'));
-        });
-
-        pageletObject = self._pagelet = $module.Pagelet({
-          _id:  dom.attr(self, 'id'), //will generate if not set
-          node: self,
-          resources: urls
-        });
-        dom.attr(self, configuration.attributeId, pageletObject._id);
+      var pglt = this._pagelet;
+      if (!pglt) {
+        pglt = $module.dom.createPagelet(this);
       }
-      return pageletObject;
+      return pglt;
     }
   });
 
@@ -785,7 +767,7 @@
      *
      * @return {NodeList}
      */
-    dom.byClass = function (klass/*[, root]*/) {
+    /*dom.byClass = function (klass[, root]) {
 
       var
       root     = arguments[1] || dom.body();
@@ -798,7 +780,7 @@
         }
       }
       return results;
-    }
+    }*/
 
     /**
      * Getter/Setter for `element` attributes
@@ -850,6 +832,29 @@
       }
     };
 
+    dom.createPagelet = function createPagelet(element) {
+      var
+      pglt = element._pagelet,
+      dom  = $module.dom,
+      urls = [];
+      if (pglt) {
+        return pglt;
+        //throw new Error(element, 'has already a pagelet');
+      }
+      forEach(element.getElementsByTagName('resource'), function (node) {
+        urls.push(dom.attr(node, 'url'));
+      });
+
+      pglt = self._pagelet = $module.Pagelet({
+        _id:  dom.attr(element, 'id'), //will generate if not set
+        node: element,
+        resources: urls
+      });
+      dom.attr(element, configuration.attributeId, pglt._id);
+
+      return pglt;
+    };
+
     dom.createStream = function createStream(elementId) {
       var watcher = setInterval(function () {
         var streamNode = dom.streamNode, i, l;
@@ -861,44 +866,42 @@
           debug(streamNode, "as pagelet stream");
         }
         if (streamNode) {
-          try {
-            forEach(streamNode.childNodes, function (child) {
-              if (dom.isLike(child, configuration.pageletNode)) {
-                var
-                targetId = dom.attr(child, configuration.attributeId),
-                target   = dom.byId(targetId),
-                targetPagelet;
 
-                if (!target) {
-                  throw new Error("#" + targetId + " does not exist");
-                }
-                targetPagelet = target.pagelet();
-                forEach(child.childNodes, function (pageletContent) {
+          forEach(streamNode.childNodes, function (child) {
+            if (dom.isLike(child, configuration.pageletNode)) {
+              var
+              targetId = dom.attr(child, configuration.attributeId),
+              target   = dom.byId(targetId),
+              targetPagelet;
 
-                  if (dom.isLike(pageletContent, configuration.pageletHtmlNode)) {
-                    debug(pageletContent, "parsed as content");
-                    targetPagelet.html(pageletContent.nodeValue);
-                  } else if (dom.isLike(pageletContent, configuration.resourceNode)) {
-                    debug(pageletContent, "parsed as resource");
-                    targetPagelet.addResource(dom.attr(pageletContent, 'url'));
-                  } else if (pageletContent.nodeType === 3) {//text node
-                    //ignored
-                  } else {
-                    warn(pageletContent, " not recognized");
-                  }
-                });
-              } else if (child.nodeType === 3) {//text node
-                //ignored
-              } else {
-                warn(child, " should be a <" + configuration.pageletNode.nodeName + " />");
+              if (!target) {
+                throw new Error("#" + targetId + " does not exist");
               }
+              targetPagelet = dom.createPagelet(target);
+              forEach(child.childNodes, function (pageletContent) {
 
-            });
-          } catch (e) {
-          }
+                if (dom.isLike(pageletContent, configuration.pageletHtmlNode)) {
+                  debug(pageletContent, "parsed as content");
+                  targetPagelet.html(pageletContent.nodeValue);
+                } else if (dom.isLike(pageletContent, configuration.resourceNode)) {
+                  debug(pageletContent, "parsed as resource");
+                  targetPagelet.addResource(dom.attr(pageletContent, 'url'));
+                } else if (pageletContent.nodeType === 3) {//text node
+                  //ignored
+                } else {
+                  warn(pageletContent, " not recognized");
+                }
+              });
+            } else if (child.nodeType === 3) {//text node
+              //ignored
+            } else {
+              warn(child, " should be a <" + configuration.pageletNode.nodeName + " />");
+            }
+          });
+
           dom.empty(streamNode);
         }
-      }, 1);
+      }, configuration.streamWatch);
     };
 
     return dom;
@@ -907,6 +910,7 @@
   //Export
   $module.config = config;
   $module.onload = $module.onload || null;
+  $module.start  = start;
   global.pagelet = $module;
 
   if (hasAMD) {

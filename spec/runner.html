@@ -14,10 +14,13 @@
     <script type="text/javascript">
         window.pagelet = {
             onload: function () {
-                pagelet.config({
+                pagelet
+                .config({
                     debug: true,
+                    streamWatch: 500,
                     stream: "#pagelet-stream"
-                });
+                })
+                .start();
             }
         }
     </script>
@@ -31,15 +34,19 @@
     <!-- include source files here... -->
 </head>
 <body>
-
-    <div id="p2" class="pagelet">
+    <div id="p1" class="pagelet" data-phase="0">
+        loading p1...
+    </div>
+    <div id="p2" class="pagelet" data-phase="2">
         loading p2...
     </div>
-    <div id="p3" class="pagelet">
+    <div id="p3" class="pagelet" data-phase="1">
         loading p3...
     </div>
 
     <div id="pagelet-stream">
+        <pagelet data-pageletid="p1">
+        </pagelet>
         <pagelet data-pageletid="p2">
             <resource url="resource/p1.css"></resource>
             <resource url="resource/p2.css"></resource>
@@ -60,8 +67,7 @@
 
     <script type="text/javascript">
         requirejs(["jquery", "pagelet/spec/_base", "pagelet/spec/all"], function () {
-            pagelet.Pagelet.load();
-
+            pagelet.Pagelet.load();//Move
             var env = jasmine.getEnv();
             env.addReporter(new jasmine.TrivialReporter());
             env.execute();
