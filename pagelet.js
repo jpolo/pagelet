@@ -1,5 +1,5 @@
 /*jslint browser:true, devel:true, indent:2 */
-/*global window, Element */
+/*global window, Element, pagelet, define */
 /**
  * The MIT License
  *
@@ -106,27 +106,25 @@
    *
    * @param {string} stringCode
    */
-  function globalEval(stringCode) {
+  function runScript(stringCode) {
     /*jslint evil:true*/
     if (global.execScript) {
       global.execScript(stringCode);
     } else {
-      //var property = 'eval';
-      //(function () {
-      global.eval(stringCode);
-      //}());
+      var property = 'eval';
+      global[property](stringCode);
     }
     /*jslint evil:false*/
-  };
+  }
 
   //iteration shortcut
   function forEach(iterable, callback, thisp) {
     var length = iterable.length, i;
     try {
       if (typeof length !== 'undefined') {
-         for (i = 0; i < length; i += 1) {
-           callback.call(thisp, iterable[i], i, iterable);
-         }
+        for (i = 0; i < length; i += 1) {
+          callback.call(thisp, iterable[i], i, iterable);
+        }
       } else {
         for (i in iterable) {
           if (iterable.hasOwnProperty(i)) {
@@ -683,7 +681,7 @@
         if (script && script !== "") {
           try {
             debug("evaluating js code: ", script);
-            globalEval(script);
+            runScript(script);
           } /*catch (e) {
             throw e;
           }*/ finally {
@@ -742,7 +740,7 @@
     forcePropNames = { innerHTML: 1, className: 1, value: 1 },
     propNames = {
       // properties renamed to avoid clashes with reserved words
-      "class": "className",
+      "class": "className"
       //"for": "htmlFor",
       // properties written as camelCase
       //tabindex: "tabIndex",
@@ -754,7 +752,7 @@
     },
     attrNames = {
       // original attribute names
-      classname: "class",
+      classname: "class"
       //htmlfor: "for",
       // for IE
       //tabindex: "tabIndex",
@@ -771,7 +769,7 @@
         headNode = document.getElementsByTagName('head')[0];
       }
       return headNode;
-    }
+    };
 
     /**
      * Return document body
@@ -799,7 +797,7 @@
       }
 
       return true;
-    }
+    };
 
     /**
      * Create a new element
@@ -842,27 +840,7 @@
     dom.byId = function byId(id) {
       id = stringify(id).replace("#", "");
       return document.getElementById(id);
-    }
-
-    /**
-     * Shortcut to get elements by its class
-     *
-     * @return {NodeList}
-     */
-    /*dom.byClass = function (klass[, root]) {
-
-      var
-      root     = arguments[1] || dom.body();
-      elements = root.getElementsByTagName('*'),
-      length   = elements.length,
-      results  = [], i;
-      for (i = 0; i < length; i += 1) {
-        if (elements[i].className === klass) {
-          results.push(elements[i]);
-        }
-      }
-      return results;
-    }*/
+    };
 
     /**
      * Getter/Setter for `element` attributes
@@ -897,14 +875,7 @@
         attrNode = element.getAttributeNode && element.getAttributeNode(attrName);
         return attrNode && attrNode.specified ? attrNode.nodeValue : null;
       }
-    }
-
-    dom.empty = function empty(element) {
-      var child;
-      while (child = element.firstChild) {
-        element.removeChild(child);
-      }
-    }
+    };
 
     dom.html = function html(element/*[, content]*/) {
       if (arguments.length > 1) {
@@ -931,7 +902,7 @@
         urls.push(dom.attr(node, 'url'));
       });
 
-      pglt = self._pagelet = $module.Pagelet({
+      pglt = element._pagelet = $module.Pagelet({
         _id:  dom.attr(element, 'id'), //will generate if not set
         node: element,
         resources: urls
@@ -1027,4 +998,9 @@
   if (pagelet.onload) {
     pagelet.onload();
   }
-}((function () {return this;}()), typeof pagelet !== "undefined" ? pagelet : {}));
+}((
+function () {
+  return this;
+}()),
+typeof pagelet !== "undefined" ? pagelet : {}
+));

@@ -1,6 +1,6 @@
 /*jslint nodejs:true, browser: true, indent:2, plusplus:false */
-/*global define, beforeEach, jasmine, waitsFor, runs */
-/*global pagelet*/
+/*global define, beforeEach, jasmine, waitsFor, runs, describe, it, expect */
+/*global window, pagelet */
 define("pagelet/spec/pagelet_spec", [], function () {
   "use strict";
 

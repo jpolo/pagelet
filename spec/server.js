@@ -1,4 +1,5 @@
-
+/*jslint nodejs:true, indent:2 */
+/*global  */
 (function () {
 
   var
