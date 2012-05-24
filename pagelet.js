@@ -46,8 +46,13 @@
       nodeType : 1,
       nodeName : 'pagelet'
     },
-    pageletHtmlNode  : {
+    contentNode  : {
       nodeType : 8//comment node
+    },
+    scriptNode: {
+      nodeType : 1,
+      nodeName : 'script',
+      type     : 'text/pagelet'
     },
     resourceNode : {
       nodeType : 1,
@@ -68,7 +73,33 @@
     });
   } : function (object, propertyName, value) {
     object[propertyName] = value;
-  };
+  },
+  createLogger = function (level) {
+    return function (/*...*/) {
+      if ((level !== 'debug' || configuration.debug) && hasConsole) {
+        console[level].apply(
+          console,
+          ['[pagelet]'].concat(Array.prototype.slice.call(arguments))
+        );
+      }
+    };
+  },
+  debug = createLogger('debug'),
+  warn  = createLogger('warn'),
+  error = createLogger('error');
+
+  /**
+   * Will call `fn`
+   */
+  function queue(fn, thisp) {
+    if (thisp) {
+      setTimeout(function () {
+        fn.call(thisp);
+      }, 0);
+    } else {
+      setTimeout(fn, 0);
+    }
+  }
 
   /**
    * evaluate code
@@ -110,6 +141,16 @@
     }
   }
 
+  function filter(iterable, callback, thisp) {
+    var filtered = [];
+    forEach(iterable, function (value, index) {
+      if (callback.call(thisp, value, index)) {
+        filtered.push(value);
+      }
+    });
+    return filtered;
+  }
+
   //throw error if property is not defined
   function requireProperty(object, propertyName) {
     if (!propertyName in object) {
@@ -129,30 +170,6 @@
       }
     });
     return klassOrObject;
-  }
-
-  function arrayFrom(arrayLike) {
-    return Array.prototype.slice.call(arrayLike);
-  }
-
-  function after(fn, afterCallback) {
-    return fn ? function () {
-      fn.apply(this, arguments);
-      afterCallback.apply(this, arguments);
-    } : afterCallback;
-  }
-
-  //logging shortcut
-  function debug(/*...*/) {
-    if (configuration.debug && hasConsole) {
-      console.log.apply(console, ['[pagelet]'].concat(arrayFrom(arguments)));
-    }
-  }
-
-  function warn(/*...*/) {
-    if (hasConsole) {
-      console.warn.apply(console, ['[pagelet]'].concat(arrayFrom(arguments)));
-    }
   }
 
   /**
@@ -180,7 +197,6 @@
    * @return {pagelet}
    */
   function start() {
-    $module.Pagelet.load();
     $module.dom.createStream(configuration.stream);
     return $module;
   }
@@ -353,7 +369,7 @@
      */
     done: function done(callback, thisp) {
       if (this.isDone()) {
-        callback.call(thisp);
+        queue(callback, thisp);
       } else {
         this.callbacks.push([callback, thisp]);
       }
@@ -502,33 +518,33 @@
     return Resource;
   }());
 
-  /*$module.loader = (function (loader) {
+  $module.loader = (function (loader) {
 
     var
-    statesCount = [0, 0, 0],//number of states
+    statesCount = [0, 0, 0, 0, 0, 0],//number of states
     waiting     = [];
 
-    loader.push = function push(resource) {
-      if (resource.isState('INIT')) {
-        waiting.push(resource);
-        resource.onreadystatechange = after(resource.onreadystatechange, function () {
-          var state = resource.readyState();
+    loader.add = function add(pglt) {
+      pglt.load();
+
+      /*if (pglt.isState('INIT')) {
+        waiting.push(pglt);
+        pglt.onreadystatechange = after(pglt.onreadystatechange, function () {
+          var state = pglt.readyState();
           statesCount[state] += 1;
 
-          if (instancesStateCount[state] === resource.constructor.instancesCount) {
+          if (statesCount[state] === pglt.constructor.instancesCount) {
 
           }
         });
-      }
+      }*/
     };
-
-
     return loader;
-  }({}));*/
+  }({}));
 
   $module.Pagelet = (function () {
     var
-    instancesStateCount = [0, 0, 0, 0, 0],//number of states
+    instancesStateCount = [0, 0, 0, 0, 0, 0, 0],//number of states
 
     ifState      = function ifState(state, iterator) {
       if (instancesStateCount[state] === $module.Pagelet.instancesCount) {
@@ -554,18 +570,6 @@
       DONE        : 6
     };
 
-    /**
-     *
-     */
-    Pagelet.load = function load() {
-      var instances = Pagelet.instances;
-      if (instances) {
-        forEach(instances, function (pageletObject) {
-          pageletObject.load();
-        });
-      }
-    };
-
     implement(Pagelet, $module.TIdentifiable, $module.TLoadable, {
       /**
        * @constructor
@@ -578,9 +582,10 @@
       initialize: function initialize(data) {
         this.Identifiable(data._id);
         this.Loadable();
-        this.node   = requireProperty(data, 'node');
+        this.node      = requireProperty(data, 'node');
         this.resources = {};
         this.innerHTML = data.innerHTML || '';
+        this.script    = data.script || '';
         forEach(data.resources, this.addResource, this);
       },
 
@@ -629,13 +634,16 @@
         if (!resources[resource._id]) {
           debug(this + " linked to " + resource, this);
           resources[resource._id] = resource;
-          /*resource.done(function () {
+          resource.done(function () {
             this.onResourceLoaded(resource);
-          }, this);*/
+          }, this);
         }
         return this;
       },
 
+      /**
+       * Set node innerHTML
+       */
       html: function html(content) {
         this.innerHTML = content;
         if (this.readyState() >= this.state('LOADING_HTML')) {
@@ -643,44 +651,42 @@
         }
       },
 
-      /*onResourceLoaded: function (resource) {
-        if (resource.isType('STYLESHEET')) {
-        } else if (resource.isType('JAVASCRIPT')) {
+      onResourceLoaded: function (resource) {
+        if (this.isState('LOADING_STYLESHEET') && this._isLoaded('STYLESHEET')) {
+          this.readyState('LOADING_HTML');
+        } else if (this.isState('LOADING_JAVASCRIPT') && this._isLoaded('JAVASCRIPT')) {
+          this.readyState('LOADING_JAVASCRIPT_INLINE');
         }
       },
 
       _isLoaded: function _isLoaded(type) {
         var allLoaded = true;
         forEach(this.resources, function (resource) {
-          if (resource.type === type && !resource.isDone()) {
+          if (resource.isType(type) && !resource.isDone()) {
             allLoaded = false;
             throw false;
           }
         });
         return allLoaded;
-      },*/
+      },
 
       loadStylesheets: function loadStylesheets() {
-        this.loadType($module.Resource.TYPE_STYLESHEET, function () {
-          this.readyState('LOADING_HTML');
-        }, this);
+        this.loadType('STYLESHEET');
       },
 
       loadJavascripts: function loadJavascripts() {
-        this.loadType($module.Resource.TYPE_JAVASCRIPT, function () {
-          this.readyState('LOADING_JAVASCRIPT_INLINE');
-        }, this);
+        this.loadType('JAVASCRIPT');
       },
 
       loadJavascriptInline: function () {
-        var jsCode = this.jsCode;//TODO change that!
-        if (jsCode && jsCode !== "") {
+        var script = this.script;//TODO change that!
+        if (script && script !== "") {
           try {
-            debug("evaluating js code: ", jsCode);
-            globalEval(jsCode);
-          } catch (e) {
+            debug("evaluating js code: ", script);
+            globalEval(script);
+          } /*catch (e) {
             throw e;
-          } finally {
+          }*/ finally {
             this.readyState('DONE');
           }
         } else {
@@ -696,31 +702,16 @@
       },
 
       loadType: function loadType(type, callback, thisp) {
-        var
-        resourcesFiltered = [],
-        resourcesTotal  = 0,
-        resourcesDone  = 0,
-        done        = function () {
-          resourcesDone += 1;
-          if (resourcesTotal <= resourcesDone && callback) {
-            callback.call(thisp);
+        var resources = filter(this.resources, function (resource) {
+          if (resource.isType(type)) {
+            resource.load();
+            return true;
           }
-        };
-
-        //count resources
-        forEach(this.resources, function (resource) {
-          if (resource.type === type) {
-            resourcesFiltered.push(resource);
-          }
+          return false;
         });
-        resourcesTotal = resourcesFiltered.length;
 
-        if (!resourcesTotal) {
-          done();
-        } else {
-          forEach(resourcesFiltered, function (resource) {
-            resource.load(done);
-          });
+        if (!resources.length) {
+          this.onResourceLoaded(null);
         }
       }
     });
@@ -923,6 +914,10 @@
       }
     };
 
+    /**
+     * @param {Element} element
+     * @return {pagelet.Pagelet}
+     */
     dom.createPagelet = function createPagelet(element) {
       var
       pglt = element._pagelet,
@@ -942,24 +937,35 @@
         resources: urls
       });
       dom.attr(element, configuration.attributeId, pglt._id);
-
       return pglt;
     };
 
+    /**
+     * @param {string} elementId
+     */
     dom.createStream = function createStream(elementId) {
-      var watcher = setInterval(function () {
+      var
+      gc      = [],
+      watcher = setInterval(function () {
         var streamNode = dom.streamNode, i, l;
         if (!streamNode) {
           streamNode = dom.streamNode = dom.byId(elementId);
 
-          //hide
-          dom.attr(streamNode, "style", "display:none");
-          debug(streamNode, "as pagelet stream");
+          //at creation
+          if (streamNode) {
+            dom.attr(streamNode, "style", "display:none");
+            debug(streamNode, "as pagelet stream");
+          }
         }
         if (streamNode) {
-
-          forEach(streamNode.childNodes, function (child) {
+          forEach(streamNode.childNodes, function (child, i, children) {
+            if (i === children.length - 1) {
+              return;//avoid last one that could be unterminated
+            }
+            gc.push(child);
             if (dom.isLike(child, configuration.pageletNode)) {
+              debug(child, "parsed as pagelet");
+
               var
               targetId = dom.attr(child, configuration.attributeId),
               target   = dom.byId(targetId),
@@ -971,9 +977,12 @@
               targetPagelet = dom.createPagelet(target);
               forEach(child.childNodes, function (pageletContent) {
 
-                if (dom.isLike(pageletContent, configuration.pageletHtmlNode)) {
+                if (dom.isLike(pageletContent, configuration.contentNode)) {
                   debug(pageletContent, "parsed as content");
                   targetPagelet.html(pageletContent.nodeValue);
+                } else if (dom.isLike(pageletContent, configuration.scriptNode)) {
+                  debug(pageletContent, "parsed as script");
+                  targetPagelet.script = pageletContent.innerHTML;
                 } else if (dom.isLike(pageletContent, configuration.resourceNode)) {
                   debug(pageletContent, "parsed as resource");
                   targetPagelet.addResource(dom.attr(pageletContent, 'url'));
@@ -983,14 +992,19 @@
                   warn(pageletContent, " not recognized");
                 }
               });
+
+              $module.loader.add(targetPagelet);
             } else if (child.nodeType === 3) {//text node
               //ignored
+              debug(child, " ignored");
             } else {
               warn(child, " should be a <" + configuration.pageletNode.nodeName + " />");
             }
           });
 
-          dom.empty(streamNode);
+          while (gc.length) {
+            streamNode.removeChild(gc.pop());
+          }
         }
       }, configuration.streamWatch);
     };

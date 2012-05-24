@@ -4,12 +4,37 @@
     <title>Jasmine Test Runner</title>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
     <link rel="stylesheet" type="text/css" href="../node_modules/jasmine-dom/examples/lib/jasmine/jasmine.css">
-    <script src="../node_modules/jasmine-dom/examples/lib/jasmine/jasmine.js"></script>
-    <script src="../node_modules/jasmine-dom/examples/lib/jasmine/jasmine-html.js"></script>
 
     <!-- include helper files here... -->
     <script src="../node_modules/requirejs/require.js"></script>
     <script src="../index.js"></script>
+    <script type="text/javascript">
+        requirejs.config({
+            baseUrl: "..",
+            paths: {
+                "jasmine": "../node_modules/jasmine-dom/examples/lib/jasmine/jasmine",
+                "jasmine_html": "../node_modules/jasmine-dom/examples/lib/jasmine/jasmine-html"
+            }
+        });
+        requirejs([
+        "jquery",
+        "jasmine"
+        ],
+        function () {
+            requirejs([
+            "jasmine_html",
+            "pagelet/spec/_base",
+            "pagelet/spec/all"
+            ], function () {
+                jQuery(function () {
+                    var env = jasmine.getEnv();
+                    env.addReporter(new jasmine.TrivialReporter());
+                    env.execute();
+                });
+            });
+        });
+    </script>
+    <!-- include source files here... -->
 
     <script type="text/javascript">
         window.pagelet = {
@@ -17,7 +42,7 @@
                 pagelet
                 .config({
                     debug: true,
-                    streamWatch: 500,
+                    streamWatch: 1,
                     stream: "#pagelet-stream"
                 })
                 .start();
@@ -25,54 +50,58 @@
         }
     </script>
     <script src="../pagelet.js" async></script>
-
-    <script type="text/javascript">
-        requirejs.config({
-            baseUrl: ".."
-        });
-    </script>
-    <!-- include source files here... -->
 </head>
 <body>
-    <div id="p1" class="pagelet" data-phase="0">
-        loading p1...
+    <div id="simple">
+        Simple
     </div>
-    <div id="p2" class="pagelet" data-phase="2">
-        loading p2...
+    <div id="script">
+        Script
     </div>
-    <div id="p3" class="pagelet" data-phase="1">
-        loading p3...
+    <div id="resources1">
+        Resources1
+    </div>
+    <div id="resources2">
+        Resources2
     </div>
 
     <div id="pagelet-stream">
-        <pagelet data-pageletid="p1">
+        <pagelet data-pageletid="simple">
+            <!--Helloworld-->
         </pagelet>
-        <pagelet data-pageletid="p2">
+
+        <pagelet data-pageletid="resources1">
             <resource url="resource/p1.css"></resource>
             <resource url="resource/p2.css"></resource>
+            <resource url="resource/p1.js"></resource>
             <resource url="resource/p2.js"></resource>
             <!--
-            <div class="message">I must be bold green</div>
-            <div class="error">I must be bold red</div>
+            <div class="message" id="resources1-message">I must be bold green</div>
+            <div class="error" id="resources1-error">I must be bold red</div>
             -->
         </pagelet>
-        <pagelet data-pageletid="p3">
+        <pagelet data-pageletid="resources2">
             <resource url="resource/p2.css"></resource>
             <resource url="resource/p2.js"></resource>
             <!--
-            <div class="error">I must be red</div>
+            <div class="error" id="resources2-error">I must be red</div>
             -->
+            <script type="text/pagelet">
+                if (window.p2_loaded) {
+                    //should be executed after script loaded
+                    window.p2_executed = true;
+                }
+            </script>
+        </pagelet>
+        <pagelet data-pageletid="script">
+            <script type="text/pagelet">
+                var el = document.getElementById("script");
+                el.innerHTML += '!';
+            </script>
+            <!--Helloscript-->
         </pagelet>
     </div>
 
-    <script type="text/javascript">
-        requirejs(["jquery", "pagelet/spec/_base", "pagelet/spec/all"], function () {
-            pagelet.Pagelet.load();//Move
-            var env = jasmine.getEnv();
-            env.addReporter(new jasmine.TrivialReporter());
-            env.execute();
-        });
-    </script>
 
 </body>
 </html>
