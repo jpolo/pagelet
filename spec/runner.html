@@ -9,7 +9,6 @@
     <script src="../node_modules/requirejs/require.js"></script>
     <script src="../index.js"></script>
     <script type="text/javascript">
-        var log = console.log || function () {};
         requirejs.config({
             baseUrl: "..",
             paths: {
@@ -22,15 +21,12 @@
         "jasmine"
         ],
         function () {
-            log("Jasmine loaded");
             requirejs([
             "jasmine_html",
             "pagelet/spec/_base",
             "pagelet/spec/all"
             ], function () {
-                log("Spec loaded");
                 jQuery(function () {
-                    log("Dom Ready");
                     var env = jasmine.getEnv();
                     env.addReporter(new jasmine.TrivialReporter());
                     env.execute();
