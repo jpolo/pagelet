@@ -60,32 +60,52 @@
     }
   },
   hasQuery      = !!document.querySelectorAll,
-  hasConsole    = typeof console !== 'undefined' && console.log,
+  hasConsole    = (typeof console !== 'undefined') && console.log,
+  hasConsoleBug = hasConsole && typeof console.log === "object",
   hasAMD        = typeof define !== 'undefined',
   stringify     = String,
 
   //shim for defineProperty
-  defineProperty = Object.defineProperty ? function (object, propertyName, value, enumerable) {
-    Object.defineProperty(object, propertyName,  {
+  defDefault = function defDefault(object, propertyName, value) {
+    object[propertyName] = value;
+  },
+  def = Object.defineProperty ? function (object, propertyName, value, enumerable) {
+    var descriptor = {
       value: value,
       enumerable: !!enumerable,
       writable: true
-    });
-  } : function (object, propertyName, value) {
-    object[propertyName] = value;
-  },
+    };
+    try {
+      Object.defineProperty(object, propertyName, descriptor);
+    } catch (e) {
+      defDefault(object, propertyName, value);
+    }
+  } : defDefault,
   createLogger = function (level) {
+    var 
+    slice  = Array.prototype.slice,
+    writer = hasConsole && (console[level] || console.log);
     return function (/*...*/) {
       if ((level !== 'debug' || configuration.debug) && hasConsole) {
-        console[level].apply(
+        writer.apply(
           console,
-          ['[pagelet]'].concat(Array.prototype.slice.call(arguments))
+          ['[pagelet]'].concat(slice.call(arguments))
         );
       }
     };
   },
-  debug = createLogger('debug'),
-  warn  = createLogger('warn'),
+  debug, warn, error;
+  
+  //patch console
+  if (hasConsoleBug && Function.prototype.bind) {
+    [
+      "log","info","warn","error","assert","dir","clear","profile","profileEnd"
+    ].forEach(function (method) {
+        console[method] = this.bind(console[method], console);
+    }, Function.prototype.call);
+  }
+  debug = createLogger('debug');
+  warn  = createLogger('warn');
   error = createLogger('error');
 
   /**
@@ -163,7 +183,7 @@
       if (i > 0) {
         var isFunction = typeof klassOrObject === 'function';
         forEach(extension, function (method, methodName) {
-          defineProperty(this, methodName, method, !isFunction);
+          def(this, methodName, method, !isFunction);
         }, isFunction ? klassOrObject.prototype : klassOrObject);
       }
     });
@@ -258,7 +278,7 @@
      * @return {string}
      */
     toString: function toString() {
-      return '[object ' + this.constructor.name + ' {id:' + this.id() + '}]';
+      return '[object ' + this.constructor.displayName + ' {id:' + this.id() + '}]';
     }
   };
 
@@ -404,7 +424,7 @@
         return new Resource(data);
       }
     }
-
+    Resource.displayName = 'Resource';
     Resource.TYPE_JAVASCRIPT = "javascript";
     Resource.TYPE_STYLESHEET = "stylesheet";
     Resource.state = {
@@ -557,7 +577,7 @@
         return new Pagelet(data);
       }
     }
-
+    Pagelet.displayName = 'Resource';
     Pagelet.state = {
       INIT        : 0,
       LOADING      : 1,
