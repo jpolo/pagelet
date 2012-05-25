@@ -42,9 +42,12 @@
     attributeId  : "data-pageletid",
     stream       : "#pagelet-stream",
     streamWatch  : 1,
+    textNode     : {
+      nodeType : 3
+    },
     pageletNode  : {
       nodeType : 1,
-      nodeName : 'pagelet'
+      nodeName : 'code'
     },
     contentNode  : {
       nodeType : 8//comment node
@@ -56,20 +59,36 @@
     },
     resourceNode : {
       nodeType : 1,
-      nodeName : 'resource'
+      nodeName : 'link'
     }
   },
   hasQuery      = !!document.querySelectorAll,
   hasConsole    = (typeof console !== 'undefined') && console.log,
   hasConsoleBug = hasConsole && typeof console.log === "object",
+  hasBind       = Function.prototype.bind,
   hasAMD        = typeof define !== 'undefined',
+  isIE          = /msie/i.test(navigator.userAgent)/* && !/opera/i.test(navigator.userAgent)*/;
   stringify     = String,
 
+  Void          = function Void() {},
+  
+  /**
+   * @param {Function} callback
+   * @param {Object=} thisp
+   * @return {Function}
+   */
+  bind          = function (fn, thisp) {
+    var apply = Function.prototype.apply;
+    return hasBind ? hasBind.call(fn, thisp) : function () {
+      return apply.call(fn, thisp, arguments);
+    };
+  },
+  
   //shim for defineProperty
-  defDefault = function defDefault(object, propertyName, value) {
+  defDefault    = function defDefault(object, propertyName, value) {
     object[propertyName] = value;
   },
-  def = Object.defineProperty ? function (object, propertyName, value, enumerable) {
+  def           = Object.defineProperty ? function (object, propertyName, value, enumerable) {
     var descriptor = {
       value: value,
       enumerable: !!enumerable,
@@ -81,52 +100,27 @@
       defDefault(object, propertyName, value);
     }
   } : defDefault,
-  createLogger = function (level) {
-    var 
-    slice  = Array.prototype.slice,
-    writer = hasConsole && (console[level] || console.log);
-    return function (/*...*/) {
-      if ((level !== 'debug' || configuration.debug) && hasConsole) {
-        writer.apply(
-          console,
-          ['[pagelet]'].concat(slice.call(arguments))
-        );
-      }
-    };
-  },
-  debug, warn, error;
   
-  //patch console
-  if (hasConsoleBug && Function.prototype.bind) {
-    [
-      "log","info","warn","error","assert","dir","clear","profile","profileEnd"
-    ].forEach(function (method) {
-        console[method] = this.bind(console[method], console);
-    }, Function.prototype.call);
-  }
-  debug = createLogger('debug');
-  warn  = createLogger('warn');
-  error = createLogger('error');
-
   /**
-   * Will call `fn`
+   * Will call `fn` at next cycle
+   *
+   * @param {Function} fn
+   * @param {Object=} thisp
    */
-  function queue(fn, thisp) {
+  queue = function queue(fn, thisp) {
     if (thisp) {
-      setTimeout(function () {
-        fn.call(thisp);
-      }, 0);
+      setTimeout(bind(fn, thisp), 0);
     } else {
       setTimeout(fn, 0);
     }
-  }
-
+  },
+  
   /**
    * evaluate code
    *
    * @param {string} stringCode
    */
-  function runScript(stringCode) {
+  runScript = function runScript(stringCode) {
     /*jslint evil:true*/
     if (global.execScript) {
       global.execScript(stringCode);
@@ -135,10 +129,14 @@
       global[property](stringCode);
     }
     /*jslint evil:false*/
-  }
-
-  //iteration shortcut
-  function forEach(iterable, callback, thisp) {
+  },
+  
+  /**
+   * @param {Array|Object} iterable
+   * @param {Function} callback
+   * @param {Object=} thisp
+   */
+  forEach = function forEach(iterable, callback, thisp) {
     var length = iterable.length, i;
     try {
       if (typeof length !== 'undefined') {
@@ -157,9 +155,14 @@
         throw e;
       }
     }
-  }
-
-  function filter(iterable, callback, thisp) {
+  },
+  
+  /**
+   * @param {Array|Object} iterable
+   * @param {Function} callback
+   * @param {Object=} thisp
+   */
+  filter = function filter(iterable, callback, thisp) {
     var filtered = [];
     forEach(iterable, function (value, index) {
       if (callback.call(thisp, value, index)) {
@@ -167,15 +170,42 @@
       }
     });
     return filtered;
-  }
-
-  //throw error if property is not defined
-  function requireProperty(object, propertyName) {
+  },
+  
+  /**
+   * Throw error if property is not defined.
+   * Else return unchanged `object[propertyName]`.
+   *   
+   * @param {Object} object
+   * @param {string} propertyName
+   * @return {*}
+   */
+  requireProperty = function requireProperty(object, propertyName) {
     if (!propertyName in object) {
       throw new Error(object + ' has no property "' + propertyName + '"');
     }
     return object[propertyName];
-  }
+  },
+  
+  createLogger = function (level) {
+    var 
+    slice  = Array.prototype.slice,
+    writer = hasConsole ? bind(console[level] || console.log, console) : Void;
+    return function (/*...*/) {
+      if ((level !== 'debug' || configuration.debug) && hasConsole) {
+        writer.apply(
+          console,
+          ['[pagelet]'].concat(slice.call(arguments))
+        );
+      }
+    };
+  },
+  debug        = createLogger('debug'), 
+  warn         = createLogger('warn'), 
+  error        = createLogger('error');
+
+
+  
 
   //shortcut for method implementation
   function implement(klassOrObject, extension/*, ...*/) {
@@ -194,7 +224,7 @@
    * @param {Object=} data
    * @return {Object|pagelet}
    */
-  function config(/*[data]*/) {
+  $module.config = function config(/*[data]*/) {
     if (arguments.length) {
       var data = arguments[0];
       if (data.hasOwnProperty('debug')) {
@@ -208,21 +238,57 @@
       return configuration;
     }
   }
-
+  
   /**
    * Start pagelet engine
    *
    * @return {pagelet}
    */
-  function start() {
+  $module.start  = function start() {
     $module.dom.createStream(configuration.stream);
     return $module;
   }
+  
+  /**
+   * Callback when module is loaded
+   */
+  $module.onload = $module.onload || null;
 
   /**
    * @trait Identifiable
    */
-  $module.TIdentifiable = {
+  $module.TStats = {
+    /**
+     * @constructor
+     */
+    Stats: function Stats() {
+      this.stats();//will initialize class data
+    },
+    
+    
+    stats: function stats(/*[key[, value]]*/) {
+      var 
+      constructor = this.constructor,
+      stats       = constructor._stats,
+      argc        = arguments.length;
+      if (!stats) {
+        stats = constructor._stats = {};
+      }
+      if (!argc) {
+        return stats;
+      } else if (argc === 1) {
+        return stats[arguments[1]];
+      } else {
+        stats[arguments[1]] = arguments[2];
+        return this;
+      }
+    }
+  };
+  
+  /**
+   * @trait Identifiable
+   */
+  $module.TIdentifiable = implement($module.TStats, {
 
     /**
      * @constructor
@@ -233,6 +299,8 @@
     },
 
     /**
+     * Getter/Setter for id
+     *
      * @param {number=} value
      * @return {number|this}
      */
@@ -262,25 +330,25 @@
     },
 
     /**
+     * Return a new generated id
+     *
      * @return {number}
      */
     generateId: function generateId() {
-      var
-      constructor = this.constructor,
-      lastId    = constructor.lastId || 0;
-      constructor.lastId = lastId + 1;
+      var lastId = this.stats('lastId') || 0;
+      this.stats('lastId', lastId + 1);
       return lastId;
     },
 
     /**
-     * Return
+     * Return string representation
      *
      * @return {string}
      */
     toString: function toString() {
       return '[object ' + this.constructor.displayName + ' {id:' + this.id() + '}]';
     }
-  };
+  });
 
   /**
    * @trait Identifiable
@@ -629,6 +697,9 @@
         }
       },
 
+      /**
+       * callback after state change
+       */
       onreadystatechange: function onreadystatechange() {
         var state = this.readyState();
         instancesStateCount[state] += 1;
@@ -697,19 +768,22 @@
       },
 
       loadJavascriptInline: function () {
-        var script = this.script;//TODO change that!
-        if (script && script !== "") {
-          try {
-            debug("evaluating js code: ", script);
-            runScript(script);
-          } /*catch (e) {
-            throw e;
-          }*/ finally {
+        //make asynchronous
+        queue(function () {
+          var script = this.script;//TODO change that!
+          if (script && script !== "") {
+            try {
+              debug("evaluating script: ", script);
+              runScript(script);
+            } /*catch (e) {
+              throw e;
+            }*/ finally {
+              this.readyState('DONE');
+            }
+          } else {
             this.readyState('DONE');
           }
-        } else {
-          this.readyState('DONE');
-        }
+        }, this);
       },
 
       loadHtml: function loadHtml() {
@@ -735,21 +809,6 @@
     });
     return Pagelet;
   }());
-
-
-  /**
-   * Element
-   */
-  implement(Element, {
-    pagelet: function pagelet() {
-      var pglt = this._pagelet;
-      if (!pglt) {
-        pglt = $module.dom.createPagelet(this);
-      }
-      return pglt;
-    }
-  });
-
 
   $module.dom = (function (dom) {
     var
@@ -803,20 +862,30 @@
       return bodyNode;
     };
 
-    dom.isLike = function isLike(element, template) {
-      if (
-        //nodeName
-        (template.hasOwnProperty("nodeName") &&
-        element.nodeName.toLowerCase() !== template.nodeName.toLowerCase()) ||
-
-        //nodeType
-        (template.hasOwnProperty("nodeType") &&
-        element.nodeType !== template.nodeType)
-      ) {
-        return false;
-      }
-
-      return true;
+    /**
+     * @param {Element} element
+     * @param {Object} template
+     * @return {boolean}
+     */
+    dom.match = function match(element, template) {
+      var result = true, attr = dom.attr;
+      forEach(template, function (value, key) {
+        switch (key) {
+        case 'nodeName':
+          result = (element[key].toLowerCase() === value.toLowerCase());
+          break;
+        case 'nodeType':
+          result = (element[key] === value);
+          break;
+        default:
+          result = (attr(element, key) === value);
+          break;
+        }
+        if (!result) {
+          throw false;//break
+        }
+      });
+      return result;
     };
 
     /**
@@ -829,10 +898,6 @@
       attr    = dom.attr,
       element = document.createElement(tagName),
       loader;
-
-      forEach(attributes, function (value, key) {
-        attr(this, key, value);
-      }, element);
 
       //only for css
       if (tagName === 'link') {
@@ -848,7 +913,24 @@
           }
         };
         loader.src = attributes.href;
+      } else if (tagName === "script") {
+        if (isIE) {//IE only
+          element.onreadystatechange = function () {
+            switch (this.readyState) {
+            case 'loaded':
+              this.onerror();            
+              break;
+            case 'complete':
+              this.onload();
+              break;
+            }
+          };
+        }
       }
+      
+      forEach(attributes, function (value, key) {
+        attr(this, key, value);
+      }, element);
       return element;
     };
 
@@ -897,6 +979,11 @@
       }
     };
 
+    /**
+     * @param {Element} element
+     * @param {string=} content
+     * @return {string|Element}
+     */
     dom.html = function html(element/*[, content]*/) {
       if (arguments.length > 1) {
         element.innerHTML = arguments[1];
@@ -936,6 +1023,7 @@
      */
     dom.createStream = function createStream(elementId) {
       var
+      match   = dom.match,
       gc      = [],
       watcher = setInterval(function () {
         var streamNode = dom.streamNode, i, l;
@@ -954,7 +1042,7 @@
               return;//avoid last one that could be unterminated
             }
             gc.push(child);
-            if (dom.isLike(child, configuration.pageletNode)) {
+            if (match(child, configuration.pageletNode)) {
               debug(child, "parsed as pagelet");
 
               var
@@ -968,16 +1056,16 @@
               targetPagelet = dom.createPagelet(target);
               forEach(child.childNodes, function (pageletContent) {
 
-                if (dom.isLike(pageletContent, configuration.contentNode)) {
+                if (match(pageletContent, configuration.contentNode)) {
                   debug(pageletContent, "parsed as content");
                   targetPagelet.html(pageletContent.nodeValue);
-                } else if (dom.isLike(pageletContent, configuration.scriptNode)) {
+                } else if (match(pageletContent, configuration.scriptNode)) {
                   debug(pageletContent, "parsed as script");
-                  targetPagelet.script = pageletContent.innerHTML;
-                } else if (dom.isLike(pageletContent, configuration.resourceNode)) {
+                  targetPagelet.script = dom.html(pageletContent);
+                } else if (match(pageletContent, configuration.resourceNode)) {
                   debug(pageletContent, "parsed as resource");
                   targetPagelet.addResource(dom.attr(pageletContent, 'url'));
-                } else if (pageletContent.nodeType === 3) {//text node
+                } else if (match(pageletContent, configuration.textNode)) {//text node
                   //ignored
                 } else {
                   warn(pageletContent, " not recognized");
@@ -985,7 +1073,7 @@
               });
 
               $module.loader.add(targetPagelet);
-            } else if (child.nodeType === 3) {//text node
+            } else if (match(child, configuration.textNode)) {//text node
               //ignored
               debug(child, " ignored");
             } else {
@@ -1004,9 +1092,6 @@
   }({}));
 
   //Export
-  $module.config = config;
-  $module.onload = $module.onload || null;
-  $module.start  = start;
   global.pagelet = $module;
 
   if (hasAMD) {
