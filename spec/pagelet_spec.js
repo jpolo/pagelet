@@ -1,6 +1,6 @@
 /*jslint nodejs:true, browser: true, indent:2, plusplus:false */
 /*global define, beforeEach, jasmine, waitsFor, runs, describe, it, expect */
-/*global window, pagelet */
+/*global window, pagelet, jQuery, report */
 define("pagelet/spec/pagelet_spec", [], function () {
   "use strict";
 
@@ -13,8 +13,12 @@ define("pagelet/spec/pagelet_spec", [], function () {
         "normal": "400",
         "bold": "700"
       }[weight] || weight);
+    },
+    clean  = function (str) {
+      return String(str).replace(/\s*/g, "");
     };
 
+    //set handler
     it("should be an object", function () {
       expect(typeof pagelet === "object").toBe(true);
     });
@@ -35,9 +39,7 @@ define("pagelet/spec/pagelet_spec", [], function () {
       });
       it("should load simple pagelets", function () {
         waitsFor(function () {
-          var el = $("#simple");
-          //alert(el.innerText);
-          return (el && el.text().replace(" ", "") !== "Simple");
+          return clean($("#simple").text()) !== "Simple";
         });
         runs(function () {
           expect($("#simple").text()).toEqual("Helloworld");
@@ -45,37 +47,34 @@ define("pagelet/spec/pagelet_spec", [], function () {
       });
       it("should load pagelets with script", function () {
         waitsFor(function () {
-          var el = $("#script");
-          return (el && el.text().replace(" ", "") !== "Script");
+          return (clean($("#script").text()) !== "Script");
         });
         runs(function () {
-          expect($("#script").text()).toEqual("Helloscript!");
+          expect(report["script-inline-before-text"]).toEqual("Helloscript");
+          expect(report["script-inline-after-text"]).toEqual("Helloscript!");
         });
       });
       it("should load pagelets with css resources", function () {
         waitsFor(function () {
-          var el = $("#resources1");
-          return (el && el.text().replace(" ", "") !== "Resources1");
-        });
+          return (clean($("#resources1").text()) !== "Resources1");
+        }, null);
         runs(function () {
           var
           message = $("#resources1-message"),
           error   = $("#resources1-error");
 
-          expect(message.css('color')).toEqual("rgb(0, 128, 0)");
+          expect(clean(message.css('color'))).toEqual("rgb(0,128,0)");
           expect(fontWeight(message.css('font-weight'))).toEqual("700");
-          expect(error.css('color')).toEqual("rgb(255, 0, 0)");
+          expect(clean(error.css('color'))).toEqual("rgb(255,0,0)");
           expect(fontWeight(error.css('font-weight'))).toEqual("700");
         });
 
         waitsFor(function () {
-          var el = $("#resources2");
-          return (el && el.text().replace(" ", "") !== "Resources2");
+          return (clean($("#resources2").text()) !== "Resources2");
         });
         runs(function () {
           var error   = $("#resources2-error");
-
-          expect(error.css('color')).toEqual("rgb(255, 0, 0)");
+          expect(clean(error.css('color'))).toEqual("rgb(255,0,0)");
           expect(fontWeight(error.css('font-weight'))).toEqual("400");
         });
       });

@@ -11,3 +11,6 @@ Duis convallis sollicitudin ante, eget commodo massa eleifend sed.
 Curabitur id ipsum at magna pellentesque auctor.
 */
 window.p2_loaded = true;
+if (window.onLoadResource) {
+  window.onLoadResource("p2.js");
+}

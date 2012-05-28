@@ -5,3 +5,6 @@ Donec aliquam tristique neque, porttitor vulputate ipsum bibendum malesuada.
 Integer elementum nulla ut libero placerat feugiat.
 */
 window.p1_loaded = true;
+if (window.onLoadResource) {
+  window.onLoadResource("p1.js");
+}

@@ -1,4 +1,4 @@
-/*jslint browser:true, devel:true, indent:2 */
+/*jslint browser:true, devel:true, plusplus: false, indent:2 */
 /*global window, Element, pagelet, define */
 /**
  * The MIT License
@@ -28,9 +28,6 @@
  *
  * @author Julien Polo<julien.polo@gmail.com>
  * @version 1.0.0
- *
- *
- *
  */
 (function (global, $module) {
   "use strict";
@@ -42,9 +39,12 @@
     attributeId  : "data-pageletid",
     stream       : "#pagelet-stream",
     streamWatch  : 1,
+    textNode     : {
+      nodeType : 3
+    },
     pageletNode  : {
       nodeType : 1,
-      nodeName : 'pagelet'
+      nodeName : 'code'
     },
     contentNode  : {
       nodeType : 8//comment node
@@ -56,20 +56,39 @@
     },
     resourceNode : {
       nodeType : 1,
-      nodeName : 'resource'
+      nodeName : 'link'
     }
   },
   hasQuery      = !!document.querySelectorAll,
   hasConsole    = (typeof console !== 'undefined') && console.log,
   hasConsoleBug = hasConsole && typeof console.log === "object",
+  hasBind       = Function.prototype.bind,
   hasAMD        = typeof define !== 'undefined',
+  isIE          = /msie/i.test(navigator.userAgent),// && !/opera/i.test(navigator.userAgent),
   stringify     = String,
 
+  Void          = function Void() {},
+
+  /**
+   * @param {Function} callback
+   * @param {Object=} thisp
+   * @return {Function}
+   */
+  bind          = function (fn, thisp) {
+    var apply = Function.prototype.apply;
+    return hasBind ? hasBind.call(fn, thisp) : function () {
+      return apply.call(fn, thisp, arguments);
+    };
+  },
+
+  //shortcut to own property
+  hasOwn        = bind(Function.prototype.call, Object.prototype.hasOwnProperty),
+
   //shim for defineProperty
-  defDefault = function defDefault(object, propertyName, value) {
+  defDefault    = function defDefault(object, propertyName, value) {
     object[propertyName] = value;
   },
-  def = Object.defineProperty ? function (object, propertyName, value, enumerable) {
+  def           = Object.defineProperty ? function (object, propertyName, value, enumerable) {
     var descriptor = {
       value: value,
       enumerable: !!enumerable,
@@ -81,52 +100,27 @@
       defDefault(object, propertyName, value);
     }
   } : defDefault,
-  createLogger = function (level) {
-    var 
-    slice  = Array.prototype.slice,
-    writer = hasConsole && (console[level] || console.log);
-    return function (/*...*/) {
-      if ((level !== 'debug' || configuration.debug) && hasConsole) {
-        writer.apply(
-          console,
-          ['[pagelet]'].concat(slice.call(arguments))
-        );
-      }
-    };
-  },
-  debug, warn, error;
-  
-  //patch console
-  if (hasConsoleBug && Function.prototype.bind) {
-    [
-      "log","info","warn","error","assert","dir","clear","profile","profileEnd"
-    ].forEach(function (method) {
-        console[method] = this.bind(console[method], console);
-    }, Function.prototype.call);
-  }
-  debug = createLogger('debug');
-  warn  = createLogger('warn');
-  error = createLogger('error');
 
   /**
-   * Will call `fn`
+   * Will call `fn` at next cycle
+   *
+   * @param {Function} fn
+   * @param {Object=} thisp
    */
-  function queue(fn, thisp) {
+  queue = function queue(fn, thisp) {
     if (thisp) {
-      setTimeout(function () {
-        fn.call(thisp);
-      }, 0);
+      setTimeout(bind(fn, thisp), 0);
     } else {
       setTimeout(fn, 0);
     }
-  }
+  },
 
   /**
    * evaluate code
    *
    * @param {string} stringCode
    */
-  function runScript(stringCode) {
+  runScript = function runScript(stringCode) {
     /*jslint evil:true*/
     if (global.execScript) {
       global.execScript(stringCode);
@@ -135,10 +129,14 @@
       global[property](stringCode);
     }
     /*jslint evil:false*/
-  }
+  },
 
-  //iteration shortcut
-  function forEach(iterable, callback, thisp) {
+  /**
+   * @param {Array|Object} iterable
+   * @param {Function} callback
+   * @param {Object=} thisp
+   */
+  forEach = function forEach(iterable, callback, thisp) {
     var length = iterable.length, i;
     try {
       if (typeof length !== 'undefined') {
@@ -147,7 +145,7 @@
         }
       } else {
         for (i in iterable) {
-          if (iterable.hasOwnProperty(i)) {
+          if (hasOwn(iterable, i)) {
             callback.call(thisp, iterable[i], i, iterable);
           }
         }
@@ -157,25 +155,73 @@
         throw e;
       }
     }
-  }
+  },
 
-  function filter(iterable, callback, thisp) {
-    var filtered = [];
-    forEach(iterable, function (value, index) {
-      if (callback.call(thisp, value, index)) {
-        filtered.push(value);
+  /**
+   * @param {Array|Object} iterable
+   * @param {Function} callback
+   * @param {Object=} thisp
+   */
+  filter = function filter(iterable, callback, thisp) {
+    var filtered = [], length = iterable.length, i, value;
+    try {
+      if (typeof length !== 'undefined') {
+        for (i = 0; i < length; i += 1) {
+          value = iterable[i];
+          if (callback.call(thisp, value, i, iterable)) {
+            filtered.push(value);
+          }
+        }
+      } else {
+        for (i in iterable) {
+          if (hasOwn(iterable, i)) {
+            value = iterable[i];
+            if (callback.call(thisp, iterable[i], i, iterable)) {
+              filtered.push(value);
+            }
+          }
+        }
       }
-    });
+    } catch (e) {
+      if (e !== false) {//`false` is a stop iteration signal
+        throw e;
+      }
+    }
     return filtered;
-  }
+  },
 
-  //throw error if property is not defined
-  function requireProperty(object, propertyName) {
+  /**
+   * Throw error if property is not defined.
+   * Else return unchanged `object[propertyName]`.
+   *
+   * @param {Object} object
+   * @param {string} propertyName
+   * @return {*}
+   */
+  requireProperty = function requireProperty(object, propertyName) {
     if (!propertyName in object) {
       throw new Error(object + ' has no property "' + propertyName + '"');
     }
     return object[propertyName];
-  }
+  },
+
+  createLogger = function (level) {
+    var
+    slice  = Array.prototype.slice,
+    writer = hasConsole ? bind(console[level] || console.log, console) : Void;
+    return function (/*...*/) {
+      if (hasConsole && (configuration.debug || level !== 'debug')) {
+        writer.apply(
+          console,
+          ['[pagelet]'].concat(slice.call(arguments))
+        );
+      }
+    };
+  },
+  debug        = createLogger('debug'),
+  warn         = createLogger('warn'),
+  error        = createLogger('error');
+
 
   //shortcut for method implementation
   function implement(klassOrObject, extension/*, ...*/) {
@@ -194,45 +240,88 @@
    * @param {Object=} data
    * @return {Object|pagelet}
    */
-  function config(/*[data]*/) {
+  $module.config = function config(/*[data]*/) {
     if (arguments.length) {
       var data = arguments[0];
-      if (data.hasOwnProperty('debug')) {
+      if (hasOwn(data, 'debug')) {
         configuration.debug = !!data.debug;
       }
-      if (data.hasOwnProperty('stream')) {
+      if (hasOwn(data, 'stream')) {
         configuration.stream = stringify(data.stream);
       }
       return $module;
     } else {
       return configuration;
     }
-  }
+  };
 
   /**
    * Start pagelet engine
    *
    * @return {pagelet}
    */
-  function start() {
+  $module.start  = function start() {
     $module.dom.createStream(configuration.stream);
     return $module;
-  }
+  };
+
+  /**
+   * Callback when module is loaded
+   */
+  $module.onload = $module.onload || null;
 
   /**
    * @trait Identifiable
    */
-  $module.TIdentifiable = {
+  $module.TStats = {
+    /**
+     * @constructor
+     */
+    Stats: function Stats() {
+      this.stats();//will initialize class data
+    },
+
+    /**
+     * @param {string=} key
+     * @param {*=} value
+     * @return {Object|*|this}
+     */
+    stats: function stats(/*[key[, value]]*/) {
+      var
+      constructor = this.constructor,
+      data        = constructor.stats,
+      argc        = arguments.length;
+      if (!data) {
+        data = constructor.stats = {};
+      }
+      if (!argc) {
+        return data;
+      } else if (argc === 1) {
+        return data[arguments[0]];
+      } else {
+        data[arguments[0]] = arguments[1];
+        return this;
+      }
+    }
+  };
+
+  /**
+   * @trait Identifiable
+   */
+  $module.TIdentifiable = implement({}, $module.TStats, {
 
     /**
      * @constructor
      * @param {number=} value
      */
     Identifiable: function Identifiable(id) {
+      this.Stats();
       this.id(typeof id === "undefined" ? this.generateId() : id);
     },
 
     /**
+     * Getter/Setter for id
+     *
      * @param {number=} value
      * @return {number|this}
      */
@@ -244,16 +333,17 @@
 
         var
         constructor = this.constructor,
-        instances   = constructor.instances;
+        instances   = constructor.instances,
+        stats       = this.stats();
         if (!instances) {
           instances = constructor.instances = {};
-          constructor.instancesCount = 0;
+          stats.count = 0;
         }
         if (instances[value]) {
           throw new Error(instances[value] + ' is already existing');
         }
         instances[value] = this;
-        constructor.instancesCount += 1;
+        stats.count += 1;
 
         return this;
       } else {
@@ -262,34 +352,46 @@
     },
 
     /**
+     * Return a new generated id
+     *
      * @return {number}
      */
     generateId: function generateId() {
-      var
-      constructor = this.constructor,
-      lastId    = constructor.lastId || 0;
-      constructor.lastId = lastId + 1;
+      var lastId = this.stats('lastId') || 0;
+      this.stats('lastId', lastId + 1);
       return lastId;
     },
 
     /**
-     * Return
+     * Return string representation
      *
      * @return {string}
      */
     toString: function toString() {
       return '[object ' + this.constructor.displayName + ' {id:' + this.id() + '}]';
     }
-  };
+  });
 
   /**
    * @trait Identifiable
    */
-  $module.TState = {
+  $module.TState = implement({}, $module.TStats, {
     /**
      * @constructor
      */
     State: function State() {
+      this.Stats();
+      if (!this.stats('countByState')) {
+        var max = 0, stats = [];
+        forEach(requireProperty(this.constructor, 'state'), function (value) {
+          max = Math.max(max, value);
+        });
+        while (max--) {
+          stats.push(0);
+        }
+
+        this.stats("countByState", stats);
+      }
       if (typeof this._state === "undefined") {
         this._state = this.state('INIT');
       }
@@ -338,6 +440,9 @@
     /*onreadystatechange: function onreadystatechange() {
     },*/
 
+    /**
+     * Return state value
+     */
     state: function state(name) {
       var result = requireProperty(this.constructor, 'state')[name];
       if (typeof result === "undefined") {
@@ -345,7 +450,7 @@
       }
       return result;
     }
-  };
+  });
 
   /**
    * @trait TLoadable
@@ -397,15 +502,19 @@
      * @return {boolean}
      */
     _onreadystatechange: function _onreadystatechange(newState, oldState) {
+      //update stats
+      this.stats().countByState[newState] += 1;
 
       switch (newState) {
       case this.state('INIT'):
         break;
       case this.state('DONE'):
-        forEach(this.callbacks, function (callback) {
+        var callbacks = this.callbacks, l = callbacks.length, callback;
+        while (l--) {
+          callback = callbacks[l];
           callback[0].call(callback[1]);
-        });
-        this.callbacks.length = 0;
+        }
+        callbacks.length = 0;
         break;
       default:
         requireProperty(this, '_onLoading').call(this, newState, oldState);
@@ -538,10 +647,7 @@
 
   $module.loader = (function (loader) {
 
-    var
-    statesCount = [0, 0, 0, 0, 0, 0],//number of states
-    waiting     = [];
-
+    var waiting     = [];
     loader.add = function add(pglt) {
       pglt.load();
 
@@ -561,13 +667,10 @@
   }({}));
 
   $module.Pagelet = (function () {
-    var
-    instancesStateCount = [0, 0, 0, 0, 0, 0, 0],//number of states
 
-    ifState      = function ifState(state, iterator) {
-      if (instancesStateCount[state] === $module.Pagelet.instancesCount) {
-        forEach($module.Pagelet.instances, iterator);
-      }
+    var allState = function allState(state, iterator) {
+      var stats   = $module.Pagelet.stats;
+      return stats.countByState && stats.countByState[state] === stats.count;
     };
 
     function Pagelet(data) {
@@ -596,12 +699,14 @@
        * - node
        * - resources
        * - innerHTML
+       * - script
        */
       initialize: function initialize(data) {
         this.Identifiable(data._id);
         this.Loadable();
         this.node      = requireProperty(data, 'node');
         this.resources = {};
+        this.resourcesByType = {};
         this.innerHTML = data.innerHTML || '';
         this.script    = data.script || '';
         forEach(data.resources, this.addResource, this);
@@ -613,15 +718,20 @@
           this.readyState('LOADING_STYLESHEET');
           break;
         case this.state('LOADING_STYLESHEET'):
-          this.loadStylesheets();
+          this.loadType('STYLESHEET');
           break;
         case this.state('LOADING_HTML'):
           this.loadHtml();
           break;
         case this.state('LOADING_JAVASCRIPT'):
-          ifState(this.state('LOADING_JAVASCRIPT'), function (pglt) {
-            pglt.loadJavascripts();
-          });
+          if (allState(this.state('LOADING_JAVASCRIPT'))) {
+            var instances = this.constructor.instances, id;
+            for (id in instances) {
+              if (hasOwn(instances, id)) {
+                instances[id].loadType('JAVASCRIPT');
+              }
+            }
+          }//TODO process only waiting for optimisation
           break;
         case this.state('LOADING_JAVASCRIPT_INLINE'):
           this.loadJavascriptInline();
@@ -629,10 +739,11 @@
         }
       },
 
+      /**
+       * callback after state change
+       */
       onreadystatechange: function onreadystatechange() {
-        var state = this.readyState();
-        instancesStateCount[state] += 1;
-        debug(this + " in state " + state, this);
+        debug(this + " in state " + this.readyState(), this);
       },
 
       /**
@@ -643,15 +754,20 @@
        */
       addResource: function addResource(resourceOrUrl) {
         var
-        resources = this.resources,
-        resource  = (typeof resourceOrUrl === "string" ?
+        resources       = this.resources,
+        resourcesByType = this.resourcesByType,
+        resource        = (typeof resourceOrUrl === "string" ?
           $module.Resource.get(resourceOrUrl) :
           resourceOrUrl
-        );
+        ),
+        resourceId      = resource._id,
+        resourceType    = resource.type;
 
-        if (!resources[resource._id]) {
+        if (!resources[resourceId]) {
           debug(this + " linked to " + resource, this);
-          resources[resource._id] = resource;
+          resources[resourceId] = resource;
+          resourcesByType[resourceType] = resourcesByType[resourceType] || [];
+          resourcesByType[resourceType].push(this);
           resource.done(function () {
             this.onResourceLoaded(resource);
           }, this);
@@ -678,38 +794,32 @@
       },
 
       _isLoaded: function _isLoaded(type) {
-        var allLoaded = true;
-        forEach(this.resources, function (resource) {
-          if (resource.isType(type) && !resource.isDone()) {
-            allLoaded = false;
-            throw false;
+        var resources = this.resourcesByType[type], l = resources && resources.length || 0;
+        while (l--) {
+          if (!resources[l].isDone()) {
+            return false;
           }
-        });
-        return allLoaded;
-      },
-
-      loadStylesheets: function loadStylesheets() {
-        this.loadType('STYLESHEET');
-      },
-
-      loadJavascripts: function loadJavascripts() {
-        this.loadType('JAVASCRIPT');
+        }
+        return true;
       },
 
       loadJavascriptInline: function () {
-        var script = this.script;//TODO change that!
-        if (script && script !== "") {
-          try {
-            debug("evaluating js code: ", script);
-            runScript(script);
-          } /*catch (e) {
-            throw e;
-          }*/ finally {
+        //make asynchronous
+        queue(function () {
+          var script = this.script;//TODO change that!
+          if (script && script !== "") {
+            try {
+              debug("evaluating script: ", script);
+              runScript(script);
+            } /*catch (e) {
+              throw e;
+            }*/ finally {
+              this.readyState('DONE');
+            }
+          } else {
             this.readyState('DONE');
           }
-        } else {
-          this.readyState('DONE');
-        }
+        }, this);
       },
 
       loadHtml: function loadHtml() {
@@ -720,36 +830,24 @@
       },
 
       loadType: function loadType(type, callback, thisp) {
-        var resources = filter(this.resources, function (resource) {
-          if (resource.isType(type)) {
-            resource.load();
-            return true;
+        var resources = this.resources, hasOne, property, resource;
+        for (property in resources) {
+          if (hasOwn(resources, property)) {
+            resource = resources[property];
+            if (resource.isType(type)) {
+              resource.load();
+              hasOne = true;
+            }
           }
-          return false;
-        });
+        }
 
-        if (!resources.length) {
+        if (!hasOne) {
           this.onResourceLoaded(null);
         }
       }
     });
     return Pagelet;
   }());
-
-
-  /**
-   * Element
-   */
-  implement(Element, {
-    pagelet: function pagelet() {
-      var pglt = this._pagelet;
-      if (!pglt) {
-        pglt = $module.dom.createPagelet(this);
-      }
-      return pglt;
-    }
-  });
-
 
   $module.dom = (function (dom) {
     var
@@ -803,19 +901,34 @@
       return bodyNode;
     };
 
-    dom.isLike = function isLike(element, template) {
-      if (
-        //nodeName
-        (template.hasOwnProperty("nodeName") &&
-        element.nodeName.toLowerCase() !== template.nodeName.toLowerCase()) ||
-
-        //nodeType
-        (template.hasOwnProperty("nodeType") &&
-        element.nodeType !== template.nodeType)
-      ) {
-        return false;
+    /**
+     * @param {Element} element
+     * @param {Object} template
+     * @return {boolean}
+     */
+    dom.match = function match(element, template) {
+      var
+      attr   = dom.attr,
+      key, value, result;
+      for (key in template) {
+        if (hasOwn(template, key)) {
+          value = template[key];
+          switch (key) {
+          case 'nodeName':
+            result = (element[key].toLowerCase() === value);
+            break;
+          case 'nodeType':
+            result = (element[key] === value);
+            break;
+          default:
+            result = (attr(element, key) === value);
+            break;
+          }
+          if (!result) {
+            return result;
+          }
+        }
       }
-
       return true;
     };
 
@@ -828,11 +941,7 @@
       var
       attr    = dom.attr,
       element = document.createElement(tagName),
-      loader;
-
-      forEach(attributes, function (value, key) {
-        attr(this, key, value);
-      }, element);
+      loader, key, value;
 
       //only for css
       if (tagName === 'link') {
@@ -848,6 +957,25 @@
           }
         };
         loader.src = attributes.href;
+      } else if (tagName === "script") {
+        if (isIE) {//IE only
+          element.onreadystatechange = function () {
+            switch (this.readyState) {
+            case 'loaded':
+              this.onerror();
+              break;
+            case 'complete':
+              this.onload();
+              break;
+            }
+          };
+        }
+      }
+
+      for (key in attributes) {
+        if (hasOwn(attributes, key)) {
+          attr(element, key, attributes[key]);
+        }
       }
       return element;
     };
@@ -868,7 +996,6 @@
      */
     dom.attr = function attr(element, name/*[, value]*/) {
       var
-      watcher   = null,
       isSetter  = arguments.length > 2,
       lc        = name.toLowerCase(),
       propName  = propNames[lc] || name,
@@ -897,6 +1024,11 @@
       }
     };
 
+    /**
+     * @param {Element} element
+     * @param {string=} content
+     * @return {string|Element}
+     */
     dom.html = function html(element/*[, content]*/) {
       if (arguments.length > 1) {
         element.innerHTML = arguments[1];
@@ -918,9 +1050,9 @@
         return pglt;
         //throw new Error(element, 'has already a pagelet');
       }
-      forEach(element.getElementsByTagName('resource'), function (node) {
+      /*forEach(element.getElementsByTagName('resource'), function (node) {
         urls.push(dom.attr(node, 'url'));
-      });
+      });*/
 
       pglt = element._pagelet = $module.Pagelet({
         _id:  dom.attr(element, 'id'), //will generate if not set
@@ -936,63 +1068,71 @@
      */
     dom.createStream = function createStream(elementId) {
       var
-      gc      = [],
+      match    = dom.match,
+      byId     = dom.byId,
+      attr     = dom.attr,
+      gc       = [],
+      parse    = function (pageletContent) {
+        //this -> pagelet
+        if (match(pageletContent, configuration.contentNode)) {
+          debug(pageletContent, "parsed as content");
+          this.html(pageletContent.nodeValue);
+        } else if (match(pageletContent, configuration.scriptNode)) {
+          debug(pageletContent, "parsed as script");
+          this.script = dom.html(pageletContent);
+        } else if (match(pageletContent, configuration.resourceNode)) {
+          debug(pageletContent, "parsed as resource");
+          this.addResource(attr(pageletContent, 'url'));
+        } else if (match(pageletContent, configuration.textNode)) {//text node
+          //ignored
+        } else {
+          warn(pageletContent, " not recognized");
+        }
+      },
+
       watcher = setInterval(function () {
-        var streamNode = dom.streamNode, i, l;
+        var
+        streamNode = dom.streamNode, i, l, children, child,
+        targetId, target, targetPagelet;
         if (!streamNode) {
-          streamNode = dom.streamNode = dom.byId(elementId);
+          streamNode = dom.streamNode = byId(elementId);
 
           //at creation
           if (streamNode) {
-            dom.attr(streamNode, "style", "display:none");
+            attr(streamNode, "style", "display:none");
             debug(streamNode, "as pagelet stream");
           }
         }
         if (streamNode) {
-          forEach(streamNode.childNodes, function (child, i, children) {
-            if (i === children.length - 1) {
-              return;//avoid last one that could be unterminated
-            }
+          children = streamNode.childNodes;
+          l        = children.length - 1;//avoid last one that could be unterminated
+          i        = 0;
+          while (i < l) {
+            child = children[i];
             gc.push(child);
-            if (dom.isLike(child, configuration.pageletNode)) {
+            if (match(child, configuration.textNode)) {//text node
+              debug(child, " ignored");
+            } else if (match(child, configuration.pageletNode)) {
               debug(child, "parsed as pagelet");
 
-              var
-              targetId = dom.attr(child, configuration.attributeId),
-              target   = dom.byId(targetId),
-              targetPagelet;
+              targetId = attr(child, configuration.attributeId);
+              target   = byId(targetId);
 
               if (!target) {
                 throw new Error("#" + targetId + " does not exist");
               }
               targetPagelet = dom.createPagelet(target);
-              forEach(child.childNodes, function (pageletContent) {
-
-                if (dom.isLike(pageletContent, configuration.contentNode)) {
-                  debug(pageletContent, "parsed as content");
-                  targetPagelet.html(pageletContent.nodeValue);
-                } else if (dom.isLike(pageletContent, configuration.scriptNode)) {
-                  debug(pageletContent, "parsed as script");
-                  targetPagelet.script = pageletContent.innerHTML;
-                } else if (dom.isLike(pageletContent, configuration.resourceNode)) {
-                  debug(pageletContent, "parsed as resource");
-                  targetPagelet.addResource(dom.attr(pageletContent, 'url'));
-                } else if (pageletContent.nodeType === 3) {//text node
-                  //ignored
-                } else {
-                  warn(pageletContent, " not recognized");
-                }
-              });
+              forEach(child.childNodes, parse, targetPagelet);
 
               $module.loader.add(targetPagelet);
-            } else if (child.nodeType === 3) {//text node
-              //ignored
-              debug(child, " ignored");
             } else {
               warn(child, " should be a <" + configuration.pageletNode.nodeName + " />");
             }
-          });
 
+            i += 1;
+          }
+
+          //garbage collect
           while (gc.length) {
             streamNode.removeChild(gc.pop());
           }
@@ -1004,9 +1144,6 @@
   }({}));
 
   //Export
-  $module.config = config;
-  $module.onload = $module.onload || null;
-  $module.start  = start;
   global.pagelet = $module;
 
   if (hasAMD) {
