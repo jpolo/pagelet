@@ -6,8 +6,14 @@ define("pagelet/spec/pagelet_spec", [], function () {
 
   describe("[module pagelet]", function () {
     var
-    global = jasmine.getGlobal(),
-    $      = jQuery;
+    $          = jQuery,
+    global     = jasmine.getGlobal(),
+    fontWeight = function (weight) {
+      return ({
+        "normal": "400",
+        "bold": "700"
+      }[weight] || weight);
+    };
 
     it("should be an object", function () {
       expect(typeof pagelet === "object").toBe(true);
@@ -55,11 +61,11 @@ define("pagelet/spec/pagelet_spec", [], function () {
           var
           message = $("#resources1-message"),
           error   = $("#resources1-error");
-          
+
           expect(message.css('color')).toEqual("rgb(0, 128, 0)");
-          expect(message.css('font-weight')).toEqual("700");
+          expect(fontWeight(message.css('font-weight'))).toEqual("700");
           expect(error.css('color')).toEqual("rgb(255, 0, 0)");
-          expect(error.css('font-weight')).toEqual("700");
+          expect(fontWeight(error.css('font-weight'))).toEqual("700");
         });
 
         waitsFor(function () {
@@ -68,9 +74,9 @@ define("pagelet/spec/pagelet_spec", [], function () {
         });
         runs(function () {
           var error   = $("#resources2-error");
-          
+
           expect(error.css('color')).toEqual("rgb(255, 0, 0)");
-          expect(error.css('font-weight')).toEqual("400");
+          expect(fontWeight(error.css('font-weight'))).toEqual("400");
         });
       });
 

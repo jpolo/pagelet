@@ -70,7 +70,7 @@
   });
 
   app.get('/', function (request, response) {
-    response.redirect('/spec/runner.test');
+    response.redirect('/spec/runner.html');
   });
   app.get('/spec/runner.html', function (request, response) {
     pipe(__dirname + '/../spec/runner.html', response);
