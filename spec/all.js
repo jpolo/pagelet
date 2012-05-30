@@ -5,5 +5,7 @@ define("pagelet/spec/all",
   "pagelet/spec/pagelet_spec"
 ],
 function () {
-  console.log("Suite loaded");
+  if (typeof console !== 'undefined') {
+    console.log("Suite loaded");
+  }
 });

@@ -60,7 +60,7 @@
     }
   },
   hasQuery      = !!document.querySelectorAll,
-  hasConsole    = (typeof console !== 'undefined') && console.log,
+  hasConsole    = (typeof console !== 'undefined'),
   hasConsoleBug = hasConsole && typeof console.log === "object",
   hasBind       = Function.prototype.bind,
   hasAMD        = typeof define !== 'undefined',

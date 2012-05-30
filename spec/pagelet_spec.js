@@ -9,7 +9,7 @@ define("pagelet/spec/pagelet_spec", [], function () {
     $          = jQuery,
     global     = jasmine.getGlobal(),
     fontWeight = function (weight) {
-      return ({
+      return String({
         "normal": "400",
         "bold": "700"
       }[weight] || weight);
