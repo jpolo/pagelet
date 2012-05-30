@@ -474,13 +474,14 @@
     },
 
     /**
+     * Trigger the loading
      *
      * @param {Function=} callback
-     * @param {*} thisp
+     * @param {*=} thisp
      */
-    load: function load(callback, thisp) {
-      if (callback) {
-        this.done(callback, thisp);
+    load: function load(/*[callback[, thisp]]*/) {
+      if (arguments.length) {
+        this.done(arguments[0], arguments[1]);
       }
       this.readyState('LOADING');//Change state
       return this;
@@ -573,6 +574,7 @@
        * @param {Object} data
        * - _id
        * - url
+       * - type
        */
       initialize: function initialize(data) {
         var
@@ -588,6 +590,8 @@
       },
 
       /**
+       * Return true if this has type equal to `type`
+       *
        * @return {boolean}
        */
       isType: function isType(type) {
@@ -668,7 +672,9 @@
 
   $module.Pagelet = (function () {
 
-    var allState = function allState(state, iterator) {
+    var
+    Resource = $module.Resource,
+    allState = function allState(state, iterator) {
       var stats   = $module.Pagelet.stats;
       return stats.countByState && stats.countByState[state] === stats.count;
     };
@@ -680,7 +686,7 @@
         return new Pagelet(data);
       }
     }
-    Pagelet.displayName = 'Resource';
+    Pagelet.displayName = 'Pagelet';
     Pagelet.state = {
       INIT        : 0,
       LOADING      : 1,
@@ -721,7 +727,10 @@
           this.loadType('STYLESHEET');
           break;
         case this.state('LOADING_HTML'):
-          this.loadHtml();
+          if (this.innerHTML !== "") {
+            this.html(this.innerHTML);
+          }
+          this.readyState('LOADING_JAVASCRIPT');
           break;
         case this.state('LOADING_JAVASCRIPT'):
           if (allState(this.state('LOADING_JAVASCRIPT'))) {
@@ -734,7 +743,7 @@
           }//TODO process only waiting for optimisation
           break;
         case this.state('LOADING_JAVASCRIPT_INLINE'):
-          this.loadJavascriptInline();
+          queue(this.loadJavascriptInline, this);
           break;
         }
       },
@@ -755,19 +764,22 @@
       addResource: function addResource(resourceOrUrl) {
         var
         resources       = this.resources,
-        resourcesByType = this.resourcesByType,
         resource        = (typeof resourceOrUrl === "string" ?
-          $module.Resource.get(resourceOrUrl) :
+          Resource.get(resourceOrUrl) :
           resourceOrUrl
         ),
         resourceId      = resource._id,
-        resourceType    = resource.type;
+        resourceType    = resource.type,
+        resourcesByType = this.resourcesByType[resourceType];
+
+        if (!resourcesByType) {
+          resourcesByType = this.resourcesByType[resourceType] = [];
+        }
 
         if (!resources[resourceId]) {
           debug(this + " linked to " + resource, this);
           resources[resourceId] = resource;
-          resourcesByType[resourceType] = resourcesByType[resourceType] || [];
-          resourcesByType[resourceType].push(this);
+          resourcesByType.push(resource);
           resource.done(function () {
             this.onResourceLoaded(resource);
           }, this);
@@ -786,9 +798,9 @@
       },
 
       onResourceLoaded: function (resource) {
-        if (this.isState('LOADING_STYLESHEET') && this._isLoaded('STYLESHEET')) {
+        if (this.isState('LOADING_STYLESHEET') && this._isLoaded(Resource.TYPE_STYLESHEET)) {
           this.readyState('LOADING_HTML');
-        } else if (this.isState('LOADING_JAVASCRIPT') && this._isLoaded('JAVASCRIPT')) {
+        } else if (this.isState('LOADING_JAVASCRIPT') && this._isLoaded(Resource.TYPE_JAVASCRIPT)) {
           this.readyState('LOADING_JAVASCRIPT_INLINE');
         }
       },
@@ -820,13 +832,6 @@
             this.readyState('DONE');
           }
         }, this);
-      },
-
-      loadHtml: function loadHtml() {
-        if (this.innerHTML !== "") {
-          this.html(this.innerHTML);
-        }
-        this.readyState('LOADING_JAVASCRIPT');
       },
 
       loadType: function loadType(type, callback, thisp) {

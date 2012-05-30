@@ -47,7 +47,7 @@ define("pagelet/spec/pagelet_spec", [], function () {
       });
       it("should load pagelets with script", function () {
         waitsFor(function () {
-          return (clean($("#script").text()) !== "Script");
+          return (clean($("#script").text()) === "Helloscript!");
         });
         runs(function () {
           expect(report["script-inline-before-text"]).toEqual("Helloscript");
@@ -81,17 +81,17 @@ define("pagelet/spec/pagelet_spec", [], function () {
 
       it("should load pagelets with js resources", function () {
         waitsFor(function () {
-          return global.p2_loaded;
+          return global.resources1_executed && global.resources2_executed;
         });
         runs(function () {
+          expect(report["p1.js"]).toBe(true);
+          expect(report["p1.js-after"]).toBe(false);
+          expect(report["p2.js"]).toBe(true);
+          expect(report["p2.js-after"]).toBe(false);
+
           expect(global.p2_loaded).toBe(true);
-          expect(global.p2_executed).toBe(true);
-        });
-        waitsFor(function () {
-          return global.p1_loaded;
-        });
-        runs(function () {
-          expect(global.p1_loaded).toBe(true);
+          expect(global.resources1_executed).toBe(true);
+          expect(global.resources2_executed).toBe(true);
         });
       });
     });

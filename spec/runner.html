@@ -7,6 +7,66 @@
 
     <!-- include helper files here... -->
     <script src="../node_modules/requirejs/require.js"></script>
+
+    <!-- load pagelet library -->
+    <script type="text/javascript">
+        (function (global) {
+            "use strict";
+
+            //onload callback
+            function onload() {
+                pagelet
+                .config({
+                    debug: true,
+                    //streamWatch: 1,
+                    stream: "#pagelet-stream"
+                })
+                .start();
+            }
+
+            if (global.pagelet) {
+                onload();
+            } else {
+                global.pagelet = {
+                    onload: onload
+                };
+            }
+        }(window));
+    </script>
+    <script src="../pagelet.js" async></script>
+
+    <!-- tests report -->
+    <script type="text/javascript">
+        window.report = {};
+        window.handlers = {
+          "script-inline-before": function () {
+            report["script-inline-before-text"] = $("#script").text();
+          },
+          "script-inline-after": function () {
+            report["script-inline-after-text"] = $("#script").text();
+          },
+          "p1.js": function () {
+            report["p1.js"] = true;
+            report["p1.js-after"] = !!window.resource1_executed;
+          },
+          "p2.js": function () {
+            report["p2.js"] = true;
+            report["p2.js-after"] = !!window.resource2_executed;
+          }
+        };
+        window.notify = function (name) {
+          window.handlers[name]();
+        };
+
+        window.onLoadResource = function (name) {
+          if (window.handlers[name]) {
+            window.handlers[name](name);
+          }
+        };
+
+    </script>
+
+    <!-- include source files here... -->
     <script src="../index.js"></script>
     <script type="text/javascript">
         requirejs.config({
@@ -34,41 +94,6 @@
             });
         });
     </script>
-    <!-- include source files here... -->
-
-    <script type="text/javascript">
-        window.pagelet = {
-            onload: function () {
-                pagelet
-                .config({
-                    debug: true,
-                    streamWatch: 1,
-                    stream: "#pagelet-stream"
-                })
-                .start();
-            }
-        }
-        window.report = {};
-        window.handlers = {
-          "script-inline-before": function () {
-            report["script-inline-before-text"] = $("#script").text();
-          },
-          "script-inline-after": function () {
-            report["script-inline-after-text"] = $("#script").text();
-          }
-        };
-        window.notify = function (name) {
-          window.handlers[name]();
-        };
-        
-        window.onLoadResource = function (name) {
-          if (window.handlers[name]) {
-            window.handlers[name](name);
-          }
-        };
-        
-    </script>
-    <script src="../pagelet.js" async></script>
 </head>
 <body>
     <div id="simple">
@@ -98,6 +123,12 @@
             <div class="message" id="resources1-message">I must be bold green</div>
             <div class="error" id="resources1-error">I must be bold red</div>
             -->
+            <script type="text/pagelet">
+                if (window.p1_loaded && window.p2_loaded) {
+                    //should be executed after script loaded
+                    window.resources1_executed = true;
+                }
+            </script>
         </code>
         <code data-pageletid="resources2">
             <link url="resource/p2.css" />
@@ -108,7 +139,7 @@
             <script type="text/pagelet">
                 if (window.p2_loaded) {
                     //should be executed after script loaded
-                    window.p2_executed = true;
+                    window.resources2_executed = true;
                 }
             </script>
         </code>
