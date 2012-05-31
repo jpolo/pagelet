@@ -29,7 +29,7 @@
  * @author Julien Polo<julien.polo@gmail.com>
  * @version 1.0.0
  */
-(function (global, $module) {
+(function (global, pagelet) {
   "use strict";
 
 
@@ -85,21 +85,15 @@
   hasOwn        = bind(Function.prototype.call, Object.prototype.hasOwnProperty),
 
   //shim for defineProperty
-  defDefault    = function defDefault(object, propertyName, value) {
-    object[propertyName] = value;
-  },
-  def           = Object.defineProperty ? function (object, propertyName, value, enumerable) {
-    var descriptor = {
-      value: value,
-      enumerable: !!enumerable,
-      writable: true
-    };
+  def           = (Object.defineProperty ? function def(object, name, desc) {
     try {
-      Object.defineProperty(object, propertyName, descriptor);
+      Object.defineProperty(object, name, desc);
     } catch (e) {
-      defDefault(object, propertyName, value);
+      object[name] = desc.value;
     }
-  } : defDefault,
+  } : function def(object, name, desc) {
+    object[name] = desc.value;
+  }),
 
   /**
    * Will call `fn` at next cycle
@@ -205,6 +199,70 @@
     return object[propertyName];
   },
 
+  //shortcut for method implementation
+  implement = function implement(klassOrObject, extension/*, ...*/) {
+    forEach(arguments, function (extension, i) {
+      if (i > 0) {
+        var isFunction = typeof klassOrObject === 'function';
+        forEach(extension, function (method, methodName) {
+          def(this, methodName, {
+            value: method,
+            enumerable: !isFunction
+          });
+        }, isFunction ? klassOrObject.prototype : klassOrObject);
+      }
+    });
+    return klassOrObject;
+  },
+
+  /**
+   * Return a trait object
+   *
+   * @return {Object}
+   */
+  Trait = function Trait(/*...*/) {
+    var result = {};
+    forEach(arguments, function (extension) {
+      forEach(extension, function (method, methodName) {
+        def(result, methodName, {
+          value: method,
+          enumerable: true,
+          writable: true
+        });
+      });
+    });
+    return result;
+  },
+
+  /**
+   * Return a new class
+   *
+   * @param {string} name
+   * @param {Function} declaration
+   * @return {Function}
+   */
+  Class = function Class(name, declaration) {
+    runScript(
+      "__pgltConstructor__ = function " + name + "(data) {" +
+        "if (this instanceof " + name + ") {" +
+          "this.initialize(data);" +
+        "} else {" +
+          "return new " + name + "(data);" +
+        "}" +
+      "}"
+    );
+    var Constructor = global.__pgltConstructor__;
+    delete global.__pgltConstructor__;
+    def(Constructor, "displayName", {
+      value: name,
+      writable: false
+    });
+    if (declaration) {
+      declaration(Constructor);
+    }
+    return Constructor;
+  },
+
   createLogger = function (level) {
     var
     slice  = Array.prototype.slice,
@@ -223,24 +281,13 @@
   error        = createLogger('error');
 
 
-  //shortcut for method implementation
-  function implement(klassOrObject, extension/*, ...*/) {
-    forEach(arguments, function (extension, i) {
-      if (i > 0) {
-        var isFunction = typeof klassOrObject === 'function';
-        forEach(extension, function (method, methodName) {
-          def(this, methodName, method, !isFunction);
-        }, isFunction ? klassOrObject.prototype : klassOrObject);
-      }
-    });
-    return klassOrObject;
-  }
-
   /**
+   * Configure pagelet engine or return configuration
+   *
    * @param {Object=} data
    * @return {Object|pagelet}
    */
-  $module.config = function config(/*[data]*/) {
+  pagelet.config = function config(/*[data]*/) {
     if (arguments.length) {
       var data = arguments[0];
       if (hasOwn(data, 'debug')) {
@@ -249,7 +296,7 @@
       if (hasOwn(data, 'stream')) {
         configuration.stream = stringify(data.stream);
       }
-      return $module;
+      return pagelet;
     } else {
       return configuration;
     }
@@ -260,20 +307,20 @@
    *
    * @return {pagelet}
    */
-  $module.start  = function start() {
-    $module.dom.createStream(configuration.stream);
-    return $module;
+  pagelet.start  = function start() {
+    pagelet.dom.createStream(configuration.stream);
+    return pagelet;
   };
 
   /**
    * Callback when module is loaded
    */
-  $module.onload = $module.onload || null;
+  pagelet.onload = pagelet.onload || null;
 
   /**
    * @trait Identifiable
    */
-  $module.TStats = {
+  pagelet.TStats = Trait({
     /**
      * @constructor
      */
@@ -303,12 +350,12 @@
         return this;
       }
     }
-  };
+  });
 
   /**
    * @trait Identifiable
    */
-  $module.TIdentifiable = implement({}, $module.TStats, {
+  pagelet.TIdentifiable = Trait(pagelet.TStats, {
 
     /**
      * @constructor
@@ -375,7 +422,7 @@
   /**
    * @trait Identifiable
    */
-  $module.TState = implement({}, $module.TStats, {
+  pagelet.TState = Trait(pagelet.TStats, {
     /**
      * @constructor
      */
@@ -455,7 +502,7 @@
   /**
    * @trait TLoadable
    */
-  $module.TLoadable = implement({}, $module.TState, {
+  pagelet.TLoadable = Trait(pagelet.TState, {
     /**
      * @constructor
      */
@@ -526,25 +573,19 @@
   /**
    * @class Resource
    */
-  $module.Resource = (function () {
-    function Resource(data) {
-      if (this instanceof Resource) {
-        this.initialize(data);
-      } else {
-        return new Resource(data);
-      }
-    }
-    Resource.displayName = 'Resource';
-    Resource.TYPE_JAVASCRIPT = "javascript";
-    Resource.TYPE_STYLESHEET = "stylesheet";
+  pagelet.Resource = Class('Resource', function (Resource) {
+    Resource.type = {
+      JAVASCRIPT: "javascript",
+      STYLESHEET: "stylesheet"
+    };
     Resource.state = {
       INIT   : 0,
       LOADING: 1,
       DONE   : 2
     };
     Resource.extensions = {
-      js: Resource.TYPE_JAVASCRIPT,
-      css: Resource.TYPE_STYLESHEET
+      js: Resource.type.JAVASCRIPT,
+      css: Resource.type.STYLESHEET
     };
 
     /**
@@ -568,7 +609,7 @@
       return resource;
     };
 
-    implement(Resource, $module.TIdentifiable, $module.TLoadable, {
+    implement(Resource, pagelet.TIdentifiable, pagelet.TLoadable, {
       /**
        * @constructor
        * @param {Object} data
@@ -596,7 +637,7 @@
        */
       isType: function isType(type) {
         if (typeof type === "string") {
-          type = this.constructor["TYPE_" + type];
+          type = this.constructor.type[type];
         }
         return this.type === type;
       },
@@ -607,7 +648,7 @@
       _onLoading: function _onLoading(newState, oldState) {
         var
         self          = this,
-        createElement = $module.dom.createElement,
+        createElement = pagelet.dom.createElement,
         onload        = function onload() {
           self.readyState('DONE');
         },
@@ -615,7 +656,7 @@
 
         //Load resource
         switch (this.type) {
-        case Resource.TYPE_STYLESHEET:
+        case Resource.type.STYLESHEET:
           node = createElement('link', {
             rel : 'stylesheet',
             media  : 'screen',
@@ -625,7 +666,7 @@
             onerror: onload
           });
           break;
-        case Resource.TYPE_JAVASCRIPT:
+        case Resource.type.JAVASCRIPT:
           node = createElement('script', {
             type   : 'text/javascript',
             src : this.url,
@@ -636,7 +677,7 @@
           break;
         }
         this.node = node;
-        $module.dom.head().appendChild(node);
+        pagelet.dom.head().appendChild(node);
       },
 
       /**
@@ -646,10 +687,42 @@
         debug(this + " in state " + this.readyState(), this);
       }
     });
-    return Resource;
-  }());
+  });
 
-  $module.loader = (function (loader) {
+  /**
+   * @class
+   */
+  pagelet.Set = Class("Set", function (Set) {
+    implement(Set, {
+      initialize: function initialize(klass) {
+        this._ = {};
+        this._class = klass;
+        this.count = 0;
+        this.countByState = new Array(klass.state.DONE);
+      },
+      add: function add(child) {
+        var self  = this, children = self._, id = child._id;
+        if (!child instanceof self._class) {
+          throw new TypeError();
+        }
+        if (!children[id]) {
+          children[id] = child;
+          child.onreadystatechange = after(child.onreadystatechange, function () {
+            self.countByState[child.readyState()] += 1;
+          });
+          self.count += 1;
+          return true;
+        }
+        return false;
+      },
+      isDone: function isDone() {
+        var countByState = this.countByState;
+        return countByState[countByState.length - 1] === this.count;
+      }
+    });
+  });
+
+  pagelet.loader = (function (loader) {
 
     var waiting     = [];
     loader.add = function add(pglt) {
@@ -670,23 +743,15 @@
     return loader;
   }({}));
 
-  $module.Pagelet = (function () {
+  pagelet.Pagelet = Class("Pagelet", function (Pagelet) {
 
     var
-    Resource = $module.Resource,
+    Resource = pagelet.Resource,
     allState = function allState(state, iterator) {
-      var stats   = $module.Pagelet.stats;
+      var stats   = pagelet.Pagelet.stats;
       return stats.countByState && stats.countByState[state] === stats.count;
     };
 
-    function Pagelet(data) {
-      if (this instanceof Pagelet) {
-        this.initialize(data);
-      } else {
-        return new Pagelet(data);
-      }
-    }
-    Pagelet.displayName = 'Pagelet';
     Pagelet.state = {
       INIT        : 0,
       LOADING      : 1,
@@ -697,7 +762,7 @@
       DONE        : 6
     };
 
-    implement(Pagelet, $module.TIdentifiable, $module.TLoadable, {
+    implement(Pagelet, pagelet.TIdentifiable, pagelet.TLoadable, {
       /**
        * @constructor
        * @param {Object} data
@@ -793,14 +858,14 @@
       html: function html(content) {
         this.innerHTML = content;
         if (this.readyState() >= this.state('LOADING_HTML')) {
-          $module.dom.html(this.node, content);
+          pagelet.dom.html(this.node, content);
         }
       },
 
       onResourceLoaded: function (resource) {
-        if (this.isState('LOADING_STYLESHEET') && this._isLoaded(Resource.TYPE_STYLESHEET)) {
+        if (this.isState('LOADING_STYLESHEET') && this._isLoaded(Resource.type.STYLESHEET)) {
           this.readyState('LOADING_HTML');
-        } else if (this.isState('LOADING_JAVASCRIPT') && this._isLoaded(Resource.TYPE_JAVASCRIPT)) {
+        } else if (this.isState('LOADING_JAVASCRIPT') && this._isLoaded(Resource.type.JAVASCRIPT)) {
           this.readyState('LOADING_JAVASCRIPT_INLINE');
         }
       },
@@ -851,10 +916,9 @@
         }
       }
     });
-    return Pagelet;
-  }());
+  });
 
-  $module.dom = (function (dom) {
+  pagelet.dom = (function (dom) {
     var
     headNode   = null,
     bodyNode   = null,
@@ -1049,7 +1113,7 @@
     dom.createPagelet = function createPagelet(element) {
       var
       pglt = element._pagelet,
-      dom  = $module.dom,
+      dom  = pagelet.dom,
       urls = [];
       if (pglt) {
         return pglt;
@@ -1059,7 +1123,7 @@
         urls.push(dom.attr(node, 'url'));
       });*/
 
-      pglt = element._pagelet = $module.Pagelet({
+      pglt = element._pagelet = pagelet.Pagelet({
         _id:  dom.attr(element, 'id'), //will generate if not set
         node: element,
         resources: urls
@@ -1129,7 +1193,7 @@
               targetPagelet = dom.createPagelet(target);
               forEach(child.childNodes, parse, targetPagelet);
 
-              $module.loader.add(targetPagelet);
+              pagelet.loader.add(targetPagelet);
             } else {
               warn(child, " should be a <" + configuration.pageletNode.nodeName + " />");
             }
@@ -1149,7 +1213,7 @@
   }({}));
 
   //Export
-  global.pagelet = $module;
+  global.pagelet = pagelet;
 
   if (hasAMD) {
     define("pagelet/pagelet", [], function () {
