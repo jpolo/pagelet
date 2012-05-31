@@ -207,7 +207,8 @@
         forEach(extension, function (method, methodName) {
           def(this, methodName, {
             value: method,
-            enumerable: !isFunction
+            enumerable: !isFunction,
+            writable: true
           });
         }, isFunction ? klassOrObject.prototype : klassOrObject);
       }
@@ -261,6 +262,14 @@
       declaration(Constructor);
     }
     return Constructor;
+  },
+
+  after = function (fn, afterCallback) {
+    return afterCallback ? function () {
+      var result = fn.apply(this, arguments);
+      afterCallback.apply(this, arguments);
+      return result;
+    } : fn;
   },
 
   createLogger = function (level) {
@@ -690,34 +699,81 @@
   });
 
   /**
-   * @class
+   * @class Set (of loadable)
    */
   pagelet.Set = Class("Set", function (Set) {
-    implement(Set, {
+    Set.state = {
+      INIT   : 0,
+      LOADING: 1,
+      DONE   : 2
+    };
+    implement(Set, pagelet.TLoadable, {
+      /**
+       * @constructor
+       */
       initialize: function initialize(klass) {
+        this.Loadable();
         this._ = {};
         this._class = klass;
+
+        //stats
         this.count = 0;
-        this.countByState = new Array(klass.state.DONE);
+        this.countByState = [];
+        var l = klass.state.DONE + 1, array = this.countByState;
+        while (l--) {
+          array.push(0);
+        }
       },
+
+      /**
+       * @param {Object}
+       */
       add: function add(child) {
-        var self  = this, children = self._, id = child._id;
-        if (!child instanceof self._class) {
+        if (!child instanceof this._class) {
           throw new TypeError();
         }
+        var
+        self         = this,
+        children     = self._,
+        id           = child._id,
+        state        = child.readyState(),
+        countByState = self.countByState;
+
         if (!children[id]) {
           children[id] = child;
           child.onreadystatechange = after(child.onreadystatechange, function () {
-            self.countByState[child.readyState()] += 1;
+            countByState[child.readyState()] += 1;
           });
+
           self.count += 1;
+          while (state >= 0) {
+            countByState[state] += 1;
+            --state;
+          }
+          child.done(self._onChildLoaded, self);
+
           return true;
         }
         return false;
       },
-      isDone: function isDone() {
+
+      _onLoading: function _onLoading(newState, oldState) {
+        var resources = this._, property;
+        for (property in resources) {
+          if (hasOwn(resources, property)) {
+            resources[property].load();
+          }
+        }
+        if (!this.count) {
+          this._onChildLoaded();
+        }
+      },
+
+      _onChildLoaded: function () {
         var countByState = this.countByState;
-        return countByState[countByState.length - 1] === this.count;
+        if (countByState[countByState.length - 1] === this.count) {
+          this.readyState('DONE');
+        }
       }
     });
   });
@@ -747,6 +803,7 @@
 
     var
     Resource = pagelet.Resource,
+    Set      = pagelet.Set,
     allState = function allState(state, iterator) {
       var stats   = pagelet.Pagelet.stats;
       return stats.countByState && stats.countByState[state] === stats.count;
@@ -776,8 +833,14 @@
         this.Identifiable(data._id);
         this.Loadable();
         this.node      = requireProperty(data, 'node');
-        this.resources = {};
+        this.resources = Set(Resource);
         this.resourcesByType = {};
+        forEach(Resource.type, function (type) {
+          var resources = Set(Resource);
+          resources.done(this.onResourcesLoaded, this);
+          this.resourcesByType[type] = resources;
+        }, this);
+
         this.innerHTML = data.innerHTML || '';
         this.script    = data.script || '';
         forEach(data.resources, this.addResource, this);
@@ -827,27 +890,14 @@
        * @return this
        */
       addResource: function addResource(resourceOrUrl) {
-        var
-        resources       = this.resources,
-        resource        = (typeof resourceOrUrl === "string" ?
+        var resource = (typeof resourceOrUrl === "string" ?
           Resource.get(resourceOrUrl) :
           resourceOrUrl
-        ),
-        resourceId      = resource._id,
-        resourceType    = resource.type,
-        resourcesByType = this.resourcesByType[resourceType];
+        );
 
-        if (!resourcesByType) {
-          resourcesByType = this.resourcesByType[resourceType] = [];
-        }
-
-        if (!resources[resourceId]) {
+        if (this.resources.add(resource)) {
           debug(this + " linked to " + resource, this);
-          resources[resourceId] = resource;
-          resourcesByType.push(resource);
-          resource.done(function () {
-            this.onResourceLoaded(resource);
-          }, this);
+          this.resourcesByType[resource.type].add(resource);
         }
         return this;
       },
@@ -862,22 +912,25 @@
         }
       },
 
-      onResourceLoaded: function (resource) {
-        if (this.isState('LOADING_STYLESHEET') && this._isLoaded(Resource.type.STYLESHEET)) {
+      /**
+       * callback when all resource from a type are loaded
+       */
+      onResourcesLoaded: function () {
+        var
+        resourcesByType = this.resourcesByType,
+        types           = Resource.type;
+
+        if (
+          this.isState('LOADING_STYLESHEET') &&
+          resourcesByType[types.STYLESHEET].isDone()
+        ) {
           this.readyState('LOADING_HTML');
-        } else if (this.isState('LOADING_JAVASCRIPT') && this._isLoaded(Resource.type.JAVASCRIPT)) {
+        } else if (
+          this.isState('LOADING_JAVASCRIPT') &&
+          resourcesByType[types.JAVASCRIPT].isDone()
+        ) {
           this.readyState('LOADING_JAVASCRIPT_INLINE');
         }
-      },
-
-      _isLoaded: function _isLoaded(type) {
-        var resources = this.resourcesByType[type], l = resources && resources.length || 0;
-        while (l--) {
-          if (!resources[l].isDone()) {
-            return false;
-          }
-        }
-        return true;
       },
 
       loadJavascriptInline: function () {
@@ -900,20 +953,7 @@
       },
 
       loadType: function loadType(type, callback, thisp) {
-        var resources = this.resources, hasOne, property, resource;
-        for (property in resources) {
-          if (hasOwn(resources, property)) {
-            resource = resources[property];
-            if (resource.isType(type)) {
-              resource.load();
-              hasOne = true;
-            }
-          }
-        }
-
-        if (!hasOne) {
-          this.onResourceLoaded(null);
-        }
+        this.resourcesByType[Resource.type[type]].load();
       }
     });
   });
