@@ -59,6 +59,7 @@
       nodeName : 'link'
     }
   },
+  undef,//forced to be undefined
   hasQuery      = !!document.querySelectorAll,
   hasConsole    = (typeof console !== 'undefined'),
   hasConsoleBug = hasConsole && typeof console.log === "object",
@@ -245,15 +246,16 @@
   Class = function Class(name, declaration) {
     runScript(
       "__pgltConstructor__ = function " + name + "(data) {" +
-        "if (this instanceof " + name + ") {" +
+        "var fn = arguments.callee;" +
+        "if (this instanceof fn) {" +
           "this.initialize(data);" +
         "} else {" +
-          "return new " + name + "(data);" +
+          "return new fn(data);" +
         "}" +
       "}"
     );
     var Constructor = global.__pgltConstructor__;
-    delete global.__pgltConstructor__;
+    global.__pgltConstructor__ = undef;
     def(Constructor, "displayName", {
       value: name,
       writable: false
@@ -454,6 +456,8 @@
     },
 
     /**
+     * Return true if this is at state `newState` 
+     *
      * @param {string|number} newState
      * @return {boolean}
      */
@@ -465,6 +469,9 @@
     },
 
     /**
+     * Getter/Setter for readyState property
+     *
+     * @param {string|number=} newState
      * @return {boolean}
      */
     readyState: function readyState(newState) {
@@ -523,6 +530,8 @@
     },
 
     /**
+     * Return true if this finished loading
+     * 
      * @return {boolean}
      */
     isDone: function isDone() {
@@ -534,6 +543,7 @@
      *
      * @param {Function=} callback
      * @param {*=} thisp
+     * @return this
      */
     load: function load(/*[callback[, thisp]]*/) {
       if (arguments.length) {
@@ -690,7 +700,7 @@
       },
 
       /**
-       *
+       * callback after state change
        */
       onreadystatechange: function onreadystatechange() {
         debug(this + " in state " + this.readyState(), this);
@@ -710,6 +720,7 @@
     implement(Set, pagelet.TLoadable, {
       /**
        * @constructor
+       * @param {Function} klass
        */
       initialize: function initialize(klass) {
         this.Loadable();
@@ -726,7 +737,10 @@
       },
 
       /**
-       * @param {Object}
+       * Try to add `child` to this set. Return true if successfully added.
+       *
+       * @param {Object} child
+       * @return {boolean}
        */
       add: function add(child) {
         if (!child instanceof this._class) {
@@ -837,7 +851,7 @@
         this.resourcesByType = {};
         forEach(Resource.type, function (type) {
           var resources = Set(Resource);
-          resources.done(this.onResourcesLoaded, this);
+          resources.done(this._onResourceTypeLoaded, this);
           this.resourcesByType[type] = resources;
         }, this);
 
@@ -852,7 +866,7 @@
           this.readyState('LOADING_STYLESHEET');
           break;
         case this.state('LOADING_STYLESHEET'):
-          this.loadType('STYLESHEET');
+          this.resourcesByType[Resource.type.STYLESHEET].load();
           break;
         case this.state('LOADING_HTML'):
           if (this.innerHTML !== "") {
@@ -865,7 +879,7 @@
             var instances = this.constructor.instances, id;
             for (id in instances) {
               if (hasOwn(instances, id)) {
-                instances[id].loadType('JAVASCRIPT');
+                instances[id].resourcesByType[Resource.type.JAVASCRIPT].load();
               }
             }
           }//TODO process only waiting for optimisation
@@ -915,7 +929,7 @@
       /**
        * callback when all resource from a type are loaded
        */
-      onResourcesLoaded: function () {
+      _onResourceTypeLoaded: function () {
         var
         resourcesByType = this.resourcesByType,
         types           = Resource.type;
@@ -950,10 +964,6 @@
             this.readyState('DONE');
           }
         }, this);
-      },
-
-      loadType: function loadType(type, callback, thisp) {
-        this.resourcesByType[Resource.type[type]].load();
       }
     });
   });
