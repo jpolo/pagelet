@@ -1,4 +1,4 @@
-/*jslint browser:true, devel:true, plusplus: false, indent:2 */
+/*jslint browser:true, devel:true, plusplus: false, newcap: false, indent:2 */
 /*global window, Element, pagelet, define */
 /**
  * The MIT License
@@ -85,6 +85,14 @@
   //shortcut to own property
   hasOwn        = bind(Function.prototype.call, Object.prototype.hasOwnProperty),
 
+  //function validator
+  validateFunction = function (fn) {
+    if (typeof fn !== 'function') {
+      throw new TypeError(fn + " is not a valid function");
+    }
+    return fn;
+  },
+  
   //shim for defineProperty
   def           = (Object.defineProperty ? function def(object, name, desc) {
     try {
@@ -103,6 +111,7 @@
    * @param {Object=} thisp
    */
   queue = function queue(fn, thisp) {
+    validateFunction(fn);
     if (thisp) {
       setTimeout(bind(fn, thisp), 0);
     } else {
@@ -132,6 +141,7 @@
    * @param {Object=} thisp
    */
   forEach = function forEach(iterable, callback, thisp) {
+    validateFunction(callback);
     var length = iterable.length, i;
     try {
       if (typeof length !== 'undefined') {
@@ -158,6 +168,7 @@
    * @param {Object=} thisp
    */
   filter = function filter(iterable, callback, thisp) {
+    validateFunction(callback);
     var filtered = [], length = iterable.length, i, value;
     try {
       if (typeof length !== 'undefined') {
@@ -222,7 +233,7 @@
    *
    * @return {Object}
    */
-  Trait = function Trait(/*...*/) {
+  trait = function trait(/*...*/) {
     var result = {};
     forEach(arguments, function (extension) {
       forEach(extension, function (method, methodName) {
@@ -243,7 +254,7 @@
    * @param {Function} declaration
    * @return {Function}
    */
-  Class = function Class(name, declaration) {
+  type = function type(name, declaration) {
     runScript(
       "__pgltConstructor__ = function " + name + "(data) {" +
         "var fn = arguments.callee;" +
@@ -263,7 +274,7 @@
     if (declaration) {
       declaration(Constructor);
     }
-    return Constructor;
+    return validateFunction(Constructor);
   },
 
   after = function (fn, afterCallback) {
@@ -331,7 +342,7 @@
   /**
    * @trait Identifiable
    */
-  pagelet.TStats = Trait({
+  pagelet.TStats = trait({
     /**
      * @constructor
      */
@@ -366,7 +377,7 @@
   /**
    * @trait Identifiable
    */
-  pagelet.TIdentifiable = Trait(pagelet.TStats, {
+  pagelet.TIdentifiable = trait(pagelet.TStats, {
 
     /**
      * @constructor
@@ -433,7 +444,7 @@
   /**
    * @trait Identifiable
    */
-  pagelet.TState = Trait(pagelet.TStats, {
+  pagelet.TState = trait(pagelet.TStats, {
     /**
      * @constructor
      */
@@ -518,7 +529,7 @@
   /**
    * @trait TLoadable
    */
-  pagelet.TLoadable = Trait(pagelet.TState, {
+  pagelet.TLoadable = trait(pagelet.TState, {
     /**
      * @constructor
      */
@@ -558,6 +569,7 @@
      * @param {*} thisp
      */
     done: function done(callback, thisp) {
+      validateFunction(callback);
       if (this.isDone()) {
         queue(callback, thisp);
       } else {
@@ -592,9 +604,9 @@
   /**
    * @class Resource
    */
-  pagelet.Resource = Class('Resource', function (Resource) {
-    Resource.type = {
-      JAVASCRIPT: "javascript",
+  pagelet.Resource = type('Resource', function (Resource) {
+    Resource.rel = {
+      SCRIPT: "script",
       STYLESHEET: "stylesheet"
     };
     Resource.state = {
@@ -603,8 +615,8 @@
       DONE   : 2
     };
     Resource.extensions = {
-      js: Resource.type.JAVASCRIPT,
-      css: Resource.type.STYLESHEET
+      "js": "text/javascript",
+      "css": "text/css"
     };
 
     /**
@@ -612,9 +624,10 @@
      *
      * @protected Called from Pagelet
      * @param {string} url Filename of the resource. eg "/js/talk.js"
+     * @param {string|number} type  
      * @return {pagelet.Resource}
      */
-    Resource.get = function get(url) {
+    Resource.get = function get(url, type) {
       var
       instances = Resource.instances,
       resource  = instances && instances[url];
@@ -622,7 +635,8 @@
       if (!resource) {
         resource = new Resource({
           _id: url,
-          url: url
+          url: url,
+          type: type
         });
       }
       return resource;
@@ -646,7 +660,12 @@
         this.Loadable();
         this.url    = url;
         this.node   = null;
+        
         this.type   = data.type || requireProperty(Resource.extensions, extension);
+        this.rel    = data.rel || requireProperty({
+          "text/css": Resource.rel.STYLESHEET,
+          "text/javascript": Resource.rel.SCRIPT
+        }, this.type);
       },
 
       /**
@@ -674,20 +693,20 @@
         node;
 
         //Load resource
-        switch (this.type) {
-        case Resource.type.STYLESHEET:
+        switch (this.rel) {
+        case Resource.rel.STYLESHEET:
           node = createElement('link', {
             rel : 'stylesheet',
             media  : 'screen',
-            type   : 'text/css',
+            type   : this.type,
             href   : this.url,
             onload : onload,
             onerror: onload
           });
           break;
-        case Resource.type.JAVASCRIPT:
+        case Resource.rel.SCRIPT:
           node = createElement('script', {
-            type   : 'text/javascript',
+            type   : this.type,
             src : this.url,
             async  : true,
             onload : onload,
@@ -711,7 +730,7 @@
   /**
    * @class Set (of loadable)
    */
-  pagelet.Set = Class("Set", function (Set) {
+  pagelet.Set = type("Set", function (Set) {
     Set.state = {
       INIT   : 0,
       LOADING: 1,
@@ -813,7 +832,7 @@
     return loader;
   }({}));
 
-  pagelet.Pagelet = Class("Pagelet", function (Pagelet) {
+  pagelet.Pagelet = type("Pagelet", function (Pagelet) {
 
     var
     Resource = pagelet.Resource,
@@ -828,8 +847,8 @@
       LOADING      : 1,
       LOADING_STYLESHEET: 2,
       LOADING_HTML    : 3,
-      LOADING_JAVASCRIPT: 4,
-      LOADING_JAVASCRIPT_INLINE: 5,
+      LOADING_SCRIPT: 4,
+      LOADING_SCRIPT_INLINE: 5,
       DONE        : 6
     };
 
@@ -847,12 +866,12 @@
         this.Identifiable(data._id);
         this.Loadable();
         this.node      = requireProperty(data, 'node');
-        this.resources = Set(Resource);
-        this.resourcesByType = {};
-        forEach(Resource.type, function (type) {
-          var resources = Set(Resource);
-          resources.done(this._onResourceTypeLoaded, this);
-          this.resourcesByType[type] = resources;
+        this.resources = new Set(Resource);
+        this.resourcesByRel = {};
+        forEach(Resource.rel, function (rel) {
+          var resources = new Set(Resource);
+          resources.done(this._onResourceRelLoaded, this);
+          this.resourcesByRel[rel] = resources;
         }, this);
 
         this.innerHTML = data.innerHTML || '';
@@ -866,25 +885,25 @@
           this.readyState('LOADING_STYLESHEET');
           break;
         case this.state('LOADING_STYLESHEET'):
-          this.resourcesByType[Resource.type.STYLESHEET].load();
+          this.resourcesByRel[Resource.rel.STYLESHEET].load();
           break;
         case this.state('LOADING_HTML'):
           if (this.innerHTML !== "") {
             this.html(this.innerHTML);
           }
-          this.readyState('LOADING_JAVASCRIPT');
+          this.readyState('LOADING_SCRIPT');
           break;
-        case this.state('LOADING_JAVASCRIPT'):
-          if (allState(this.state('LOADING_JAVASCRIPT'))) {
+        case this.state('LOADING_SCRIPT'):
+          if (allState(this.state('LOADING_SCRIPT'))) {
             var instances = this.constructor.instances, id;
             for (id in instances) {
               if (hasOwn(instances, id)) {
-                instances[id].resourcesByType[Resource.type.JAVASCRIPT].load();
+                instances[id].resourcesByRel[Resource.rel.SCRIPT].load();
               }
             }
           }//TODO process only waiting for optimisation
           break;
-        case this.state('LOADING_JAVASCRIPT_INLINE'):
+        case this.state('LOADING_SCRIPT_INLINE'):
           queue(this.loadJavascriptInline, this);
           break;
         }
@@ -903,15 +922,11 @@
        * @param {pagelet.Resource|string} resourceOrUrl
        * @return this
        */
-      addResource: function addResource(resourceOrUrl) {
-        var resource = (typeof resourceOrUrl === "string" ?
-          Resource.get(resourceOrUrl) :
-          resourceOrUrl
-        );
-
+      addResource: function addResource(resourceOrUrl, type) {
+        var resource = Resource.get(resourceOrUrl, type);
         if (this.resources.add(resource)) {
           debug(this + " linked to " + resource, this);
-          this.resourcesByType[resource.type].add(resource);
+          this.resourcesByRel[resource.rel].add(resource);
         }
         return this;
       },
@@ -929,21 +944,21 @@
       /**
        * callback when all resource from a type are loaded
        */
-      _onResourceTypeLoaded: function () {
+      _onResourceRelLoaded: function () {
         var
-        resourcesByType = this.resourcesByType,
-        types           = Resource.type;
+        resourcesByRel = this.resourcesByRel,
+        rels           = Resource.rel;
 
         if (
           this.isState('LOADING_STYLESHEET') &&
-          resourcesByType[types.STYLESHEET].isDone()
+          resourcesByRel[rels.STYLESHEET].isDone()
         ) {
           this.readyState('LOADING_HTML');
         } else if (
-          this.isState('LOADING_JAVASCRIPT') &&
-          resourcesByType[types.JAVASCRIPT].isDone()
+          this.isState('LOADING_SCRIPT') &&
+          resourcesByRel[rels.SCRIPT].isDone()
         ) {
-          this.readyState('LOADING_JAVASCRIPT_INLINE');
+          this.readyState('LOADING_SCRIPT_INLINE');
         }
       },
 
@@ -1201,7 +1216,10 @@
           this.script = dom.html(pageletContent);
         } else if (match(pageletContent, configuration.resourceNode)) {
           debug(pageletContent, "parsed as resource");
-          this.addResource(attr(pageletContent, 'url'));
+          this.addResource(
+            attr(pageletContent, 'data-href'), 
+            attr(pageletContent, 'type')
+          );
         } else if (match(pageletContent, configuration.textNode)) {//text node
           //ignored
         } else {
