@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 /*jslint nodejs:true, indent:2 */
 /*global  */
 (function () {
@@ -5,9 +6,13 @@
   var
   express   = require('express'),
   fs        = require('fs'),
+  os        = require('os'),
   url       = require('url'),
+  spawn     = require('child_process').spawn,
   app       = express.createServer(),
-  timeout   = 30;
+  timeout   = 30,
+  port      = 3000,
+  host      = 'http://localhost:' + port;
 
   /**
    * Helper to parse a string into chunks
@@ -58,6 +63,19 @@
     });
   }
 
+  /**
+   * Helper to open a browser
+   */
+  function launch() {
+    switch (os.type().toLowerCase()) {
+    case 'linux':
+      spawn('xdg-open', [ host ]);
+      break;
+    default:
+      spawn('open', [ host ]);
+    }
+  }
+
   app.configure(function () {
     app.use(express.methodOverride());
     app.use(express.bodyParser());
@@ -79,6 +97,8 @@
     var path = url.parse(request.url).pathname;
     pipe(__dirname + '/..' + path, response);
   });
-  app.listen(3000);
+  app.listen(port);
 
+  console.warn("Server running at : http://localhost:" + port + '/');
+  launch();
 }());
