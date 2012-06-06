@@ -1,168 +1,170 @@
 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
 "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
 <head>
-    <title>Jasmine Test Runner</title>
-    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-    <link rel="stylesheet" type="text/css" href="../node_modules/jasmine-dom/examples/lib/jasmine/jasmine.css">
+  <title>Jasmine Test Runner</title>
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+  <link rel="stylesheet" type="text/css" href="../node_modules/jasmine-dom/examples/lib/jasmine/jasmine.css">
 
-    <!-- include helper files here... -->
-    <script src="../node_modules/requirejs/require.js"></script>
-    <script type="text/javascript">
-        if (!window.console) {
-          window.console = {
-            info: function () {},
-            debug: function () {},
-            log: function () {},
-            warn: function () {},
-            error: function () {}
-          };
-        }
-    </script>
-    
-    <!-- load pagelet library -->
-    <script type="text/javascript">
-        (function (global) {
-            "use strict";
+  <!-- include helper files here... -->
+  <script src="../node_modules/requirejs/require.js"></script>
+  <script type="text/javascript">
+    if (!window.console) {
+      window.console = {
+      info: function () {},
+      debug: function () {},
+      log: function () {},
+      warn: function () {},
+      error: function () {}
+      };
+    }
+  </script>
 
-            //onload callback
-            function onload() {
-                pagelet
-                .config({
-                    debug: true,
-                    //streamWatch: 1,
-                    stream: "#pagelet-stream"
-                })
-                .start();
-            }
+  <!-- load pagelet library -->
+  <script type="text/javascript">
+    (function (global) {
+      "use strict";
 
-            if (global.pagelet) {
-                onload();
-            } else {
-                global.pagelet = {
-                    onload: onload
-                };
-            }
-        }(window));
-    </script>
-    <script src="../pagelet.js" async></script>
+      var
+      pagelet = global.pagelet = {},
+      script  = document.createElement('script'),
+      url     = "../pagelet.js";
 
-    <!-- tests report -->
-    <script type="text/javascript">
-        window.report = {};
-        window.handlers = {
-          "script-inline-before": function () {
-            report["script-inline-before-text"] = $("#script").text();
-          },
-          "script-inline-after": function () {
-            report["script-inline-after-text"] = $("#script").text();
-          },
-          "p1.js": function () {
-            report["p1.js"] = true;
-            report["p1.js-after"] = !!window.resource1_executed;
-          },
-          "p2.js": function () {
-            report["p2.js"] = true;
-            report["p2.js-after"] = !!window.resource2_executed;
-          }
-        };
-        window.notify = function (name) {
-          window.handlers[name]();
-        };
+      //onload callback
+      pagelet.onload = function () {
+        this
+          .config({
+            debug: true,
+            //streamWatch: 1,
+            stream: "#pagelet-stream"
+          })
+          .start();
+      };
 
-        window.onLoadResource = function (name) {
-          if (window.handlers[name]) {
-            window.handlers[name](name);
-          }
-        };
+      //asynchronous loading
+      script.type  = 'text/javascript';
+      script.src   = url;
+      script.async = true;
+      document.getElementsByTagName("head")[0].appendChild(script);
+    }(window));
+  </script>
 
-    </script>
+  <!-- tests report -->
+  <script type="text/javascript">
+    window.report = {};
+    window.handlers = {
+      "script-inline-before": function () {
+      report["script-inline-before-text"] = $("#script").text();
+      },
+      "script-inline-after": function () {
+      report["script-inline-after-text"] = $("#script").text();
+      },
+      "p1.js": function () {
+      report["p1.js"] = true;
+      report["p1.js-after"] = !!window.resource1_executed;
+      },
+      "p2.js": function () {
+      report["p2.js"] = true;
+      report["p2.js-after"] = !!window.resource2_executed;
+      }
+    };
+    window.notify = function (name) {
+      window.handlers[name]();
+    };
 
-    <!-- include source files here... -->
-    <script src="../index.js"></script>
-    <script type="text/javascript">
-        requirejs.config({
-            baseUrl: "..",
-            paths: {
-                "jasmine": "node_modules/jasmine-dom/examples/lib/jasmine/jasmine",
-                "jasmine_html": "node_modules/jasmine-dom/examples/lib/jasmine/jasmine-html"
-            }
+    window.onLoadResource = function (name) {
+      if (window.handlers[name]) {
+      window.handlers[name](name);
+      }
+    };
+
+  </script>
+
+  <!-- include source files here... -->
+  <script src="../index.js"></script>
+  <script type="text/javascript">
+    requirejs.config({
+      baseUrl: "..",
+      paths: {
+        "jasmine": "node_modules/jasmine-dom/examples/lib/jasmine/jasmine",
+        "jasmine_html": "node_modules/jasmine-dom/examples/lib/jasmine/jasmine-html"
+      }
+    });
+    requirejs([
+    "jquery",
+    "jasmine"
+    ],
+    function () {
+      requirejs([
+      "jasmine_html",
+      "pagelet/spec/_base",
+      "pagelet/spec/all"
+      ], function () {
+        jQuery(function () {
+          var env = jasmine.getEnv();
+          env.addReporter(new jasmine.TrivialReporter());
+          env.execute();
         });
-        requirejs([
-        "jquery",
-        "jasmine"
-        ],
-        function () {
-            requirejs([
-            "jasmine_html",
-            "pagelet/spec/_base",
-            "pagelet/spec/all"
-            ], function () {
-                jQuery(function () {
-                    var env = jasmine.getEnv();
-                    env.addReporter(new jasmine.TrivialReporter());
-                    env.execute();
-                });
-            });
-        });
-    </script>
+      });
+    });
+  </script>
 </head>
 <body>
-    <div id="simple">
-        Simple
-    </div>
-    <div id="script">
-        Script
-    </div>
-    <div id="resources1">
-        Resources1
-    </div>
-    <div id="resources2">
-        Resources2
-    </div>
+  <div id="simple">
+    Simple
+  </div>
+  <div id="script">
+    Script
+  </div>
+  <div id="resources1">
+    Resources1
+  </div>
+  <div id="resources2">
+    Resources2
+  </div>
 
-    <div id="pagelet-stream">
-        <code data-pageletid="simple">
-            <!--Helloworld-->
-        </code>
+  <div id="pagelet-stream" style="display:none">
+    <code data-pageletid="simple">
+      <!--Helloworld-->
+    </code>
 
-        <code data-pageletid="resources1">
-            <link data-href="resource/p1.css" type="text/css"/>
-            <link data-href="resource/p2.css" type="text/css"/>
-            <link data-href="resource/p1.js" type="text/javascript"/>
-            <link data-href="resource/p2.js" type="text/javascript"/>
-            <!--
-            <div class="message" id="resources1-message">I must be bold green</div>
-            <div class="error" id="resources1-error">I must be bold red</div>
-            -->
-            <script type="text/pagelet">
-                if (window.p1_loaded && window.p2_loaded) {
-                    //should be executed after script loaded
-                    window.resources1_executed = true;
-                }
-            </script>
-        </code>
-        <code data-pageletid="resources2">
-            <link data-href="resource/p2.css" type="text/css"/>
-            <link data-href="resource/p2.js" type="text/javascript"/>
-            <!--
-            <div class="error" id="resources2-error">I must be red</div>
-            -->
-            <script type="text/pagelet">
-                if (window.p2_loaded) {
-                    //should be executed after script loaded
-                    window.resources2_executed = true;
-                }
-            </script>
-        </code>
-        <code data-pageletid="script">
-            <script type="text/pagelet">
-                notify("script-inline-before");
-                var el = $("#script").html($("#script").html() + '!');
-                notify("script-inline-after");
-            </script>
-            <!--Helloscript-->
-        </code>
-        <br/>
-    </div>
+    <code data-pageletid="resources1">
+      <link data-href="resource/p1.css" type="text/css"/>
+      <link data-href="resource/p2.css" type="text/css"/>
+      <link data-href="resource/p1.js" type="text/javascript"/>
+      <link data-href="resource/p2.js" type="text/javascript"/>
+      <!--
+      <div class="message" id="resources1-message">I must be bold green</div>
+      <div class="error" id="resources1-error">I must be bold red</div>
+      -->
+      <script type="text/pagelet">
+        if (window.p1_loaded && window.p2_loaded) {
+          //should be executed after script loaded
+          window.resources1_executed = true;
+        }
+      </script>
+    </code>
+    <code data-pageletid="resources2">
+      <link data-href="resource/p2.css" type="text/css"/>
+      <link data-href="resource/p2.js" type="text/javascript"/>
+      <!--
+      <div class="error" id="resources2-error">I must be red</div>
+      -->
+      <script type="text/pagelet">
+        if (window.p2_loaded) {
+          //should be executed after script loaded
+          window.resources2_executed = true;
+        }
+      </script>
+    </code>
+    <code data-pageletid="script">
+      <script type="text/pagelet">
+        notify("script-inline-before");
+        var el = $("#script").html($("#script").html() + '!');
+        notify("script-inline-after");
+      </script>
+      <!--Helloscript-->
+    </code>
+    <br/>
+  </div>
 </body>
 </html>

@@ -33,7 +33,8 @@ API.
 ### TODO:
 
  1. fix markup api
- 2. do some benchmarks
+ 2. handle priorities between pagelets
+ 3. do some benchmarks
 
 
 ### CONTRIBUTION:
