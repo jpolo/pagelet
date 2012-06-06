@@ -71,6 +71,9 @@
     case 'linux':
       spawn('xdg-open', [ host ]);
       break;
+    case 'windows':
+      spawn('open', [ host ]);
+      break;
     default:
       spawn('open', [ host ]);
     }
@@ -89,6 +92,10 @@
 
   app.get('/', function (request, response) {
     response.redirect('/spec/runner.html');
+  });
+  app.get('/server/stop', function (request, response) {
+    console.warn("Stopping server...");
+    app.close();
   });
   app.get('/spec/runner.html', function (request, response) {
     pipe(__dirname + '/../spec/runner.html', response);

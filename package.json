@@ -30,7 +30,8 @@
         "lint"         : "*"
     },
     "scripts": {
-        "test": ["node ./spec/runner.js"]
+        "test": "node ./spec/server.js",
+        "lint": "./node_modules/lint/bin/node-lint *.js spec/*.js"
     },
     "engines" : {
         "node": ">=0.4.0"
