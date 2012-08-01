@@ -60,15 +60,14 @@
     }
   },
   undef,//forced to be undefined
+  Void          = function Void() {},
   hasQuery      = !!document.querySelectorAll,
   hasConsole    = (typeof console !== 'undefined'),
   hasConsoleBug = hasConsole && typeof console.log === "object",
   hasBind       = Function.prototype.bind,
-  hasAMD        = typeof define !== 'undefined',
+  define        = global.define || Void,
   isIE          = /msie/i.test(navigator.userAgent),// && !/opera/i.test(navigator.userAgent),
   stringify     = String,
-
-  Void          = function Void() {},
 
   /**
    * @param {Function} callback
@@ -76,14 +75,14 @@
    * @return {Function}
    */
   bind          = function (fn, thisp) {
-    var apply = Function.prototype.apply;
+    var apply = Void.apply;
     return hasBind ? hasBind.call(fn, thisp) : function () {
       return apply.call(fn, thisp, arguments);
     };
   },
 
   //shortcut to own property
-  hasOwn        = bind(Function.prototype.call, Object.prototype.hasOwnProperty),
+  hasOwn        = bind(Void.call, {}.hasOwnProperty),
 
   //function validator
   validateFunction = function (fn) {
@@ -92,7 +91,7 @@
     }
     return fn;
   },
-  
+
   //shim for defineProperty
   def           = (Object.defineProperty ? function def(object, name, desc) {
     try {
@@ -105,19 +104,43 @@
   }),
 
   /**
-   * Will call `fn` at next cycle
+   * Will call `fn` as soon as possible
    *
    * @param {Function} fn
    * @param {Object=} thisp
    */
-  queue = function queue(fn, thisp) {
-    validateFunction(fn);
-    if (thisp) {
-      setTimeout(bind(fn, thisp), 0);
-    } else {
-      setTimeout(fn, 0);
-    }
-  },
+  queue = (function /*factory*/() {
+    var
+    tasks        = {},
+    taskId       = 0,
+    channel      = null,
+    setImmediate = global.setImmediate ? global.setImmediate :
+      global.msSetImmediate ? global.msSetImmediate :
+      typeof MessageChannel !== "undefined" ? function (fn) {
+        if (!channel) {
+          channel = new MessageChannel();
+          channel.port1.onmessage = function (event) {
+            var fn = tasks[event.data];
+            delete tasks[event.data];
+            fn();// run the stuff
+          };
+        }
+
+        var id = taskId++;
+        tasks[id] = fn;
+        channel.port2.postMessage(id);
+      } :
+      setTimeout,
+    queue = function queue(fn, thisp) {
+      validateFunction(fn);
+      if (thisp) {
+        fn = bind(fn, thisp);
+      }
+
+      setImmediate(fn, 0);
+    };
+    return queue;
+  }()),
 
   /**
    * evaluate code
@@ -467,7 +490,7 @@
     },
 
     /**
-     * Return true if this is at state `newState` 
+     * Return true if this is at state `newState`
      *
      * @param {string|number} newState
      * @return {boolean}
@@ -542,7 +565,7 @@
 
     /**
      * Return true if this finished loading
-     * 
+     *
      * @return {boolean}
      */
     isDone: function isDone() {
@@ -624,7 +647,7 @@
      *
      * @protected Called from Pagelet
      * @param {string} url Filename of the resource. eg "/js/talk.js"
-     * @param {string|number} type  
+     * @param {string|number} type
      * @return {pagelet.Resource}
      */
     Resource.get = function get(url, type) {
@@ -660,7 +683,7 @@
         this.Loadable();
         this.url    = url;
         this.node   = null;
-        
+
         this.type   = data.type || requireProperty(Resource.extensions, extension);
         this.rel    = data.rel || requireProperty({
           "text/css": Resource.rel.STYLESHEET,
@@ -813,8 +836,14 @@
 
   pagelet.loader = (function (loader) {
 
-    var waiting     = [];
+    var waiting = new Array(5);
     loader.add = function add(pglt) {
+      /*waiting[pglt.priority] = waiting[pglt.priority] || pagelet.Set(pglt.constructor);
+      if (waiting[pglt.priority].add(pglt)) {
+
+      };
+
+      console.warn(waiting)*/
       pglt.load();
 
       /*if (pglt.isState('INIT')) {
@@ -866,6 +895,7 @@
         this.Identifiable(data._id);
         this.Loadable();
         this.node      = requireProperty(data, 'node');
+        this.priority  = requireProperty(data, 'priority');
         this.resources = new Set(Resource);
         this.resourcesByRel = {};
         forEach(Resource.rel, function (rel) {
@@ -1191,6 +1221,7 @@
       pglt = element._pagelet = pagelet.Pagelet({
         _id:  dom.attr(element, 'id'), //will generate if not set
         node: element,
+        priority: dom.attr(element, 'data-priority') || 0,
         resources: urls
       });
       dom.attr(element, configuration.attributeId, pglt._id);
@@ -1217,7 +1248,7 @@
         } else if (match(pageletContent, configuration.resourceNode)) {
           debug(pageletContent, "parsed as resource");
           this.addResource(
-            attr(pageletContent, 'data-href'), 
+            attr(pageletContent, 'data-href'),
             attr(pageletContent, 'type')
           );
         } else if (match(pageletContent, configuration.textNode)) {//text node
@@ -1283,11 +1314,11 @@
   //Export
   global.pagelet = pagelet;
 
-  if (hasAMD) {
-    define("pagelet/pagelet", [], function () {
-      return pagelet;
-    });
-  }
+  //AMD
+  define("pagelet/pagelet", [], function () {
+    return pagelet;
+  });
+
 
   if (pagelet.onload) {
     pagelet.onload();
