@@ -81,6 +81,8 @@
     };
   },
 
+  setImmediate = global.setImmediate || global.msSetImmediate || global.setTimeout,
+
   //shortcut to own property
   hasOwn        = bind(Void.call, {}.hasOwnProperty),
 
@@ -109,54 +111,19 @@
    * @param {Function} fn
    * @param {Object=} thisp
    */
-  queue = (function /*factory*/() {
-    var
-    tasks        = {},
-    taskId       = 0,
-    channel      = null,
-    setImmediate = global.setImmediate ? global.setImmediate :
-      global.msSetImmediate ? global.msSetImmediate :
-      typeof MessageChannel !== "undefined" ? function (fn) {
-        if (!channel) {
-          channel = new MessageChannel();
-          channel.port1.onmessage = function (event) {
-            var fn = tasks[event.data];
-            delete tasks[event.data];
-            fn();// run the stuff
-          };
-        }
-
-        var id = taskId++;
-        tasks[id] = fn;
-        channel.port2.postMessage(id);
-      } :
-      setTimeout,
-    queue = function queue(fn, thisp) {
-      validateFunction(fn);
-      if (thisp) {
-        fn = bind(fn, thisp);
-      }
-
-      setImmediate(fn, 0);
-    };
-    return queue;
-  }()),
+  queue = function queue(fn, thisp) {
+    validateFunction(fn);
+    setImmediate(thisp ? bind(fn, thisp) : fn);
+  },
 
   /**
    * evaluate code
    *
    * @param {string} stringCode
    */
-  runScript = function runScript(stringCode) {
-    /*jslint evil:true*/
-    if (global.execScript) {
-      global.execScript(stringCode);
-    } else {
-      var property = 'eval';
-      global[property](stringCode);
-    }
-    /*jslint evil:false*/
-  },
+  /*jslint evil:true*/
+  runScript = global.execScript || global.eval,
+  /*jslint evil:false*/
 
   /**
    * @param {Array|Object} iterable
@@ -268,36 +235,6 @@
       });
     });
     return result;
-  },
-
-  /**
-   * Return a new class
-   *
-   * @param {string} name
-   * @param {Function} declaration
-   * @return {Function}
-   */
-  type = function type(name, declaration) {
-    runScript(
-      "__pgltConstructor__ = function " + name + "(data) {" +
-        "var fn = arguments.callee;" +
-        "if (this instanceof fn) {" +
-          "this.initialize(data);" +
-        "} else {" +
-          "return new fn(data);" +
-        "}" +
-      "}"
-    );
-    var Constructor = global.__pgltConstructor__;
-    global.__pgltConstructor__ = undef;
-    def(Constructor, "displayName", {
-      value: name,
-      writable: false
-    });
-    if (declaration) {
-      declaration(Constructor);
-    }
-    return validateFunction(Constructor);
   },
 
   after = function (fn, afterCallback) {
@@ -592,11 +529,10 @@
      * @param {*} thisp
      */
     done: function done(callback, thisp) {
-      validateFunction(callback);
       if (this.isDone()) {
         queue(callback, thisp);
       } else {
-        this.callbacks.push([callback, thisp]);
+        this.callbacks.push([validateFunction(callback), thisp]);
       }
     },
 
@@ -627,7 +563,12 @@
   /**
    * @class Resource
    */
-  pagelet.Resource = type('Resource', function (Resource) {
+  pagelet.Resource = (function () {
+    
+    function Resource(data) {
+      this.initialize(data);
+    }
+    
     Resource.rel = {
       SCRIPT: "script",
       STYLESHEET: "stylesheet"
@@ -748,12 +689,19 @@
         debug(this + " in state " + this.readyState(), this);
       }
     });
-  });
+    
+    return Resource;
+  }());
 
   /**
    * @class Set (of loadable)
    */
-  pagelet.Set = type("Set", function (Set) {
+  pagelet.Set = (function () {
+    
+    function Set(klass) {
+      this.initialize(klass);
+    }
+    
     Set.state = {
       INIT   : 0,
       LOADING: 1,
@@ -832,7 +780,9 @@
         }
       }
     });
-  });
+    
+    return Set;
+  }());
 
   pagelet.loader = (function (loader) {
 
@@ -861,7 +811,7 @@
     return loader;
   }({}));
 
-  pagelet.Pagelet = type("Pagelet", function (Pagelet) {
+  pagelet.Pagelet = (function () {
 
     var
     Resource = pagelet.Resource,
@@ -870,6 +820,10 @@
       var stats   = pagelet.Pagelet.stats;
       return stats.countByState && stats.countByState[state] === stats.count;
     };
+    
+    function Pagelet(data) {
+      this.initialize(data);
+    }
 
     Pagelet.state = {
       INIT        : 0,
@@ -1011,7 +965,9 @@
         }, this);
       }
     });
-  });
+    
+    return Pagelet;
+  }());
 
   pagelet.dom = (function (dom) {
     var
@@ -1218,7 +1174,7 @@
         urls.push(dom.attr(node, 'url'));
       });*/
 
-      pglt = element._pagelet = pagelet.Pagelet({
+      pglt = element._pagelet = new pagelet.Pagelet({
         _id:  dom.attr(element, 'id'), //will generate if not set
         node: element,
         priority: dom.attr(element, 'data-priority') || 0,
